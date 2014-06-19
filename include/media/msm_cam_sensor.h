@@ -9,7 +9,7 @@
 #include <linux/i2c.h>
 
 #define I2C_SEQ_REG_SETTING_MAX   5
-#define I2C_SEQ_REG_DATA_MAX      20
+#define I2C_SEQ_REG_DATA_MAX      256
 #define I2C_REG_DATA_MAX       (8*1024)
 #ifdef CONFIG_SMARTISAN_MSM8974SFO
 #define I2C_SEQ_REG_DATA_HEAD     8
