@@ -60,7 +60,8 @@ static struct w1_master * w1_alloc_dev(u32 id, int slave_count, int slave_ttl,
 	dev->bus_master = (struct w1_bus_master *)(dev + 1);
 
 	dev->owner		= THIS_MODULE;
-	dev->max_slave_count	= slave_count;
+	//dev->max_slave_count	= slave_count;
+	dev->max_slave_count = 1;
 	dev->slave_count	= 0;
 	dev->attempts		= 0;
 	dev->initialized	= 0;

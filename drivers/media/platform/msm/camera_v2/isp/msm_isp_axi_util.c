@@ -110,14 +110,21 @@ int msm_isp_validate_axi_request(struct msm_vfe_axi_shared_data *axi_data,
 		stream_info->num_planes = 1;
 		stream_info->format_factor = ISP_Q2;
 		break;
+	case V4L2_PIX_FMT_UYVY:
+		stream_info->num_planes = 1;
+		stream_info->format_factor = 2 * ISP_Q2;
+		break;
 	case V4L2_PIX_FMT_NV12:
 	case V4L2_PIX_FMT_NV21:
 	case V4L2_PIX_FMT_NV14:
 	case V4L2_PIX_FMT_NV41:
+		stream_info->num_planes = 2;
+		stream_info->format_factor = 1.5 * ISP_Q2;
+		break;
 	case V4L2_PIX_FMT_NV16:
 	case V4L2_PIX_FMT_NV61:
 		stream_info->num_planes = 2;
-		stream_info->format_factor = 1.5 * ISP_Q2;
+		stream_info->format_factor = 2 * ISP_Q2;
 		break;
 	/*TD: Add more image format*/
 	default:
@@ -203,6 +210,11 @@ static uint32_t msm_isp_axi_get_plane_size(
 		/* TODO: fix me */
 		size = plane_cfg[plane_idx].output_height *
 		plane_cfg[plane_idx].output_width;
+		break;
+	case V4L2_PIX_FMT_UYVY:
+		/* TODO: fix me */
+		size = plane_cfg[plane_idx].output_height *
+		plane_cfg[plane_idx].output_width *2;
 		break;
 	case V4L2_PIX_FMT_NV12:
 	case V4L2_PIX_FMT_NV21:
@@ -1234,7 +1246,9 @@ static int msm_isp_stop_axi_stream(struct vfe_device *vfe_dev,
 			enum msm_isp_camif_update_state camif_update)
 {
 	int i, rc = 0;
-	uint8_t wait_for_complete = 0, cur_stream_cnt = 0;
+	unsigned long flags;
+	uint8_t wait_for_complete = 0;
+	uint8_t cur_stream_cnt = 0; 
 	struct msm_vfe_axi_stream *stream_info;
 	struct msm_vfe_axi_shared_data *axi_data = &vfe_dev->axi_data;
 
@@ -1268,11 +1282,34 @@ static int msm_isp_stop_axi_stream(struct vfe_device *vfe_dev,
 				stream_info->stream_src == RDI_INTF_2)
 				wait_for_complete = 1;
 			else {
-			msm_isp_axi_stream_enable_cfg(vfe_dev, stream_info);
-			stream_info->state = INACTIVE;
+				msm_isp_axi_stream_enable_cfg(vfe_dev, stream_info);
+				stream_info->state = INACTIVE;
 			}
 		} else {
-			wait_for_complete = 1;
+            if (vfe_dev->axi_data.front_cam == 1) {
+                wait_for_complete = 1;
+            }
+            else {
+                msm_isp_axi_stream_enable_cfg(vfe_dev, stream_info);
+                stream_info->state = INACTIVE;
+                vfe_dev->hw_info->vfe_ops.core_ops.reg_update(vfe_dev);
+
+                //pr_err("msm_isp_stop_axi_stream format %d camif %d, frame %d",
+                        //stream_info->output_format, camif_update, vfe_dev->axi_data.frame_status);
+
+                spin_lock_irqsave(&vfe_dev->shared_data_lock, flags);
+                if (vfe_dev->axi_data.frame_status == VFE_FRAME_STATUS_SOF) {
+                    vfe_dev->axi_data.frame_status = VFE_FRAME_STATUS_WAIT_EOF;
+                    init_completion(&vfe_dev->stream_config_complete);
+                    spin_unlock_irqrestore(&vfe_dev->shared_data_lock, flags);
+                    rc = wait_for_completion_interruptible_timeout(
+                        &vfe_dev->stream_config_complete,
+                        msecs_to_jiffies(VFE_MAX_CFG_TIMEOUT));
+                }
+                else {
+                    spin_unlock_irqrestore(&vfe_dev->shared_data_lock, flags);
+                }
+            }
 		}
 	}
 	if (wait_for_complete) {

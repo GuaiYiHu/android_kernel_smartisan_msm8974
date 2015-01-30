@@ -115,7 +115,6 @@ qpnp_rtc_set_time(struct device *dev, struct rtc_time *tm)
 
 	spin_lock_irqsave(&rtc_dd->alarm_ctrl_lock, irq_flags);
 	ctrl_reg = rtc_dd->alarm_ctrl_reg1;
-
 	if (ctrl_reg & BIT_RTC_ALARM_ENABLE) {
 		alarm_enabled = 1;
 		ctrl_reg &= ~BIT_RTC_ALARM_ENABLE;
@@ -176,7 +175,6 @@ qpnp_rtc_set_time(struct device *dev, struct rtc_time *tm)
 		dev_err(dev, "Write to RTC reg failed\n");
 		goto rtc_rw_fail;
 	}
-
 	if (alarm_enabled) {
 		ctrl_reg |= BIT_RTC_ALARM_ENABLE;
 		rc = qpnp_write_wrapper(rtc_dd, &ctrl_reg,
@@ -186,7 +184,6 @@ qpnp_rtc_set_time(struct device *dev, struct rtc_time *tm)
 			goto rtc_rw_fail;
 		}
 	}
-
 	rtc_dd->alarm_ctrl_reg1 = ctrl_reg;
 
 rtc_rw_fail:
@@ -291,7 +288,6 @@ qpnp_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alarm)
 		dev_err(dev, "Write to ALARM reg failed\n");
 		goto rtc_rw_fail;
 	}
-
 	ctrl_reg = (alarm->enabled) ?
 			(rtc_dd->alarm_ctrl_reg1 | BIT_RTC_ALARM_ENABLE) :
 			(rtc_dd->alarm_ctrl_reg1 & ~BIT_RTC_ALARM_ENABLE);
@@ -360,7 +356,6 @@ qpnp_rtc_alarm_irq_enable(struct device *dev, unsigned int enabled)
 	ctrl_reg = rtc_dd->alarm_ctrl_reg1;
 	ctrl_reg = enabled ? (ctrl_reg | BIT_RTC_ALARM_ENABLE) :
 				(ctrl_reg & ~BIT_RTC_ALARM_ENABLE);
-
 	rc = qpnp_write_wrapper(rtc_dd, &ctrl_reg,
 			rtc_dd->alarm_base + REG_OFFSET_ALARM_CTRL1, 1);
 	if (rc) {
@@ -595,7 +590,7 @@ static void qpnp_rtc_shutdown(struct spmi_device *spmi)
 		spin_lock_irqsave(&rtc_dd->alarm_ctrl_lock, irq_flags);
 		dev_dbg(&spmi->dev, "Disabling alarm interrupts\n");
 
-		/* Disable RTC alarms */
+		/* Disable RTC-alarm-pwrup*/
 		reg = rtc_dd->alarm_ctrl_reg1;
 		reg &= ~BIT_RTC_ALARM_ENABLE;
 		rc = qpnp_write_wrapper(rtc_dd, &reg,

@@ -40,6 +40,7 @@
 
 #define W1_F2D_READ_RETRIES		10
 #define W1_F2D_READ_MAXLEN		8
+char color = 'E';
 
 /*
  * Check the file size bounds and adjusts count as needed.
@@ -82,6 +83,7 @@ static int w1_f2d_readblock(struct w1_slave *sl, int off, int count, char *buf)
 
 		if (w1_reset_select_slave(sl))
 			return -1;
+
 
 		w1_write_block(sl->master, wrbuf, 3);
 		w1_read_block(sl->master, cmp, count);
@@ -130,6 +132,80 @@ static ssize_t w1_f2d_read_bin(struct file *filp, struct kobject *kobj,
 
 	return count;
 }
+
+static ssize_t w1_slave_attribute_show_color(struct device *dev, struct device_attribute *attr, char *buf)
+{
+
+	struct w1_slave *sl = dev_to_w1_slave(dev);
+	int i = 0;
+	ssize_t count;
+	char data_buf[25]={0},tmp;
+
+	data_buf[1]=0xAA;
+	if(color == 'E'){
+
+	if (w1_f2d_readblock(sl, 0, 8, data_buf) < 0){
+	}
+	for(; i <8 ;i++)
+	printk("%02x ",data_buf[i]);
+#if 0
+	if (w1_f2d_readblock(sl, 8, 8, data_buf+8) < 0){
+		count = -EIO;
+		printk("lgy w1_slave_attribute_show_data \n");
+	}
+	for(i=8; i <16 ;i++)
+	printk("%02x ",data_buf[i]);
+	if (w1_f2d_readblock(sl, 16, 8, data_buf+16) < 0){
+		count = -EIO;
+		printk("lgy w1_slave_attribute_show_data \n");
+	}
+	for(i=16; i <24 ;i++)
+	printk("%02x ",data_buf[i]);
+#endif
+	printk("\n");
+	//only "0~9"
+	tmp = data_buf[1]%16+0x30;
+	if((tmp >= '0' && tmp <= '9'))
+		color = tmp;
+	else
+		color = 'E';
+	}
+	count = sprintf(buf, "%c\n", color);
+
+	return count;
+}
+
+
+
+#define W1_SLAVE_ATTR_RO(_name, _mode)				\
+	struct device_attribute w1_slave_attribute_##_name =	\
+		__ATTR(w1_slave_##_name, _mode,		\
+		       w1_slave_attribute_show_##_name, NULL)
+
+static W1_SLAVE_ATTR_RO(color, S_IRUGO);
+
+static struct attribute *w1_slave_default_attrs[] = {
+	&w1_slave_attribute_color.attr,
+	NULL
+};
+
+static struct attribute_group w1_slave_defattr_group = {
+	.attrs = w1_slave_default_attrs,
+};
+
+int w1_create_slave_attributes(struct w1_slave *slave)
+{
+	return sysfs_create_group(&slave->dev.kobj, &w1_slave_defattr_group);
+}
+
+void w1_destroy_slave_attributes(struct w1_slave *slave)
+{
+	color = 'E';
+	sysfs_remove_group(&slave->dev.kobj, &w1_slave_defattr_group);
+}
+
+
+
 
 /*
  * Writes to the scratchpad and reads it back for verification.
@@ -195,7 +271,6 @@ retry:
 
 	/* Sleep for tprog ms to wait for the write to complete */
 	msleep(W1_F2D_TPROG_MS);
-
 	/* Reset the bus to wake up the EEPROM  */
 	w1_reset_bus(sl->master);
 
@@ -276,11 +351,14 @@ static struct bin_attribute w1_f2d_bin_attr = {
 
 static int w1_f2d_add_slave(struct w1_slave *sl)
 {
+    //printk("[DYC] w1_f2d_add_slave\n");
+	w1_create_slave_attributes(sl);
 	return sysfs_create_bin_file(&sl->dev.kobj, &w1_f2d_bin_attr);
 }
 
 static void w1_f2d_remove_slave(struct w1_slave *sl)
 {
+	w1_destroy_slave_attributes(sl);
 	sysfs_remove_bin_file(&sl->dev.kobj, &w1_f2d_bin_attr);
 }
 
@@ -296,6 +374,7 @@ static struct w1_family w1_family_2d = {
 
 static int __init w1_f2d_init(void)
 {
+    //printk("[DYC] w1_ds2431 w1_register_family\n");
 	return w1_register_family(&w1_family_2d);
 }
 

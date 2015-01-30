@@ -50,6 +50,8 @@
 
 #define CPP_CMD_TIMEOUT_MS 300
 #define MSM_MICRO_IFACE_CLK_IDX 7
+#define MSM_CPP_NOMINAL_CLOCK 266670000
+#define MSM_CPP_TURBO_CLOCK 320000000
 
 struct msm_cpp_timer_data_t {
 	struct cpp_device *cpp_dev;
@@ -850,8 +852,8 @@ static void cpp_load_fw(struct cpp_device *cpp_dev, char *fw_name_bin)
 
 	/*Get Bootloader Version*/
 	msm_cpp_write(MSM_CPP_CMD_GET_BOOTLOADER_VER, cpp_dev->base);
-	pr_info("MC Bootloader Version: 0x%x\n",
-		   msm_cpp_read(cpp_dev->base));
+	//pr_info("MC Bootloader Version: 0x%x\n",
+		   //msm_cpp_read(cpp_dev->base));
 
 	/*Get Firmware Version*/
 	msm_cpp_write(MSM_CPP_CMD_GET_FW_VER, cpp_dev->base);
@@ -863,7 +865,7 @@ static void cpp_load_fw(struct cpp_device *cpp_dev, char *fw_name_bin)
 	msm_cpp_poll(cpp_dev->base, MSM_CPP_MSG_ID_CMD);
 	msm_cpp_poll(cpp_dev->base, 0x2);
 	msm_cpp_poll(cpp_dev->base, MSM_CPP_MSG_ID_FW_VER);
-	pr_info("CPP FW Version: 0x%x\n", msm_cpp_read(cpp_dev->base));
+	//pr_info("CPP FW Version: 0x%x\n", msm_cpp_read(cpp_dev->base));
 	msm_cpp_poll(cpp_dev->base, MSM_CPP_MSG_ID_TRAILER);
 
 	/*Disable MC clock*/
@@ -1595,6 +1597,53 @@ long msm_cpp_subdev_ioctl(struct v4l2_subdev *sd,
 		kfree(process_frame->cpp_cmd_msg);
 		kfree(process_frame);
 		kfree(event_qcmd);
+		break;
+	}
+	case VIDIOC_MSM_CPP_SET_CLOCK: {
+		long clock_rate = 0;
+		if (ioctl_ptr->len == 0) {
+		        pr_err("ioctl_ptr->len is 0\n");
+		        mutex_unlock(&cpp_dev->mutex);
+		        return -EINVAL;
+		}
+
+		if (ioctl_ptr->ioctl_ptr == NULL) {
+		        pr_err("ioctl_ptr->ioctl_ptr is NULL\n");
+		        mutex_unlock(&cpp_dev->mutex);
+		        return -EINVAL;
+		}
+
+		if (ioctl_ptr->len > sizeof(clock_rate)) {
+			pr_err("Not valid ioctl_ptr->len\n");
+			mutex_unlock(&cpp_dev->mutex);
+			return -EINVAL;
+		}
+
+		rc = (copy_from_user(&clock_rate,
+		        (void __user *)ioctl_ptr->ioctl_ptr,
+		        ioctl_ptr->len) ? -EFAULT : 0);
+		if (rc) {
+		        ERR_COPY_FROM_USER();
+		        mutex_unlock(&cpp_dev->mutex);
+		        return -EINVAL;
+		}
+
+		if ((clock_rate == MSM_CPP_NOMINAL_CLOCK) ||
+			(clock_rate == MSM_CPP_TURBO_CLOCK)) {
+			if (clock_rate > 0) {
+				clock_rate = clk_round_rate(cpp_dev->cpp_clk[4], clock_rate);
+				CPP_DBG("clk:%ld\n", clock_rate);
+				clk_set_rate(cpp_dev->cpp_clk[4], clock_rate);
+				rc = msm_isp_update_bandwidth(ISP_CPP, clock_rate * 4,
+					clock_rate * 6);
+				if (rc < 0) {
+					pr_err("Bandwidth Set Failed!\n");
+					msm_isp_update_bandwidth(ISP_CPP, 0, 0);
+					mutex_unlock(&cpp_dev->mutex);
+					return -EINVAL;
+				}
+			}
+		}
 		break;
 	}
 	case MSM_SD_SHUTDOWN: {

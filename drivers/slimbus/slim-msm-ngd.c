@@ -91,25 +91,25 @@ static irqreturn_t ngd_slim_interrupt(int irq, void *d)
 	u32 stat = readl_relaxed(ngd + NGD_INT_STAT);
 	u32 pstat;
 
-	if ((stat & NGD_INT_MSG_BUF_CONTE) ||
-		(stat & NGD_INT_MSG_TX_INVAL) || (stat & NGD_INT_DEV_ERR) ||
-		(stat & NGD_INT_TX_NACKED_2)) {
-		writel_relaxed(stat, ngd + NGD_INT_CLR);
-		dev->err = -EIO;
-
-		dev_err(dev->dev, "NGD interrupt error:0x%x, err:%d", stat,
-								dev->err);
-		/* Guarantee that error interrupts are cleared */
-		mb();
-		if (dev->wr_comp)
-			complete(dev->wr_comp);
-
-	} else if (stat & NGD_INT_TX_MSG_SENT) {
+	if (stat & NGD_INT_TX_MSG_SENT) {
 		writel_relaxed(NGD_INT_TX_MSG_SENT, ngd + NGD_INT_CLR);
 		/* Make sure interrupt is cleared */
 		mb();
 		if (dev->wr_comp)
 			complete(dev->wr_comp);
+	} else if ((stat & NGD_INT_MSG_BUF_CONTE) ||
+		(stat & NGD_INT_MSG_TX_INVAL) || (stat & NGD_INT_DEV_ERR) ||
+		(stat & NGD_INT_TX_NACKED_2)) {
+		dev_err(dev->dev, "NGD interrupt error:0x%x", stat);
+		writel_relaxed(stat, ngd + NGD_INT_CLR);
+		/* Guarantee that error interrupts are cleared */
+		mb();
+		if (((stat & NGD_INT_TX_NACKED_2) ||
+			(stat & NGD_INT_MSG_TX_INVAL))) {
+			dev->err = -EIO;
+		if (dev->wr_comp)
+			complete(dev->wr_comp);
+		}
 	}
 	if (stat & NGD_INT_RX_MSG_RCVD) {
 		u32 rx_buf[10];
@@ -303,8 +303,28 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 			 * Messages related to data channel management can't
 			 * wait since they are holding reconfiguration lock.
 			 * clk_pause in resume (which can change state back to
-			 * MSM_CTRL_AWAKE), will need that lock
+			 * MSM_CTRL_AWAKE), will need that lock.
+			 * Port disconnection, channel removal calls should pass
+			 * through since there is no activity on the bus and
+			 * those calls are triggered by clients due to
+			 * device_down callback in that situation.
+			 * Returning 0 on the disconnections and
+			 * removals will ensure consistent state of channels,
+			 * ports with the HW
+			 * Remote requests to remove channel/port will be
+			 * returned from the path where they wait on
+			 * acknowledgement from ADSP
 			 */
+			if ((txn->mt == SLIM_MSG_MT_DEST_REFERRED_USER) &&
+				((mc == SLIM_USR_MC_CHAN_CTRL ||
+				mc == SLIM_USR_MC_DISCONNECT_PORT ||
+				mc == SLIM_USR_MC_RECONFIG_NOW)))
+				return -EREMOTEIO;
+			if ((txn->mt == SLIM_MSG_MT_CORE) &&
+				((mc == SLIM_MSG_MC_DISCONNECT_PORT ||
+				mc == SLIM_MSG_MC_NEXT_REMOVE_CHANNEL ||
+				mc == SLIM_USR_MC_RECONFIG_NOW)))
+				return 0;
 			if ((txn->mt == SLIM_MSG_MT_CORE) &&
 				((mc >= SLIM_MSG_MC_CONNECT_SOURCE &&
 				mc <= SLIM_MSG_MC_CHANGE_CONTENT) ||
@@ -313,7 +333,7 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 				return -EREMOTEIO;
 			if ((txn->mt == SLIM_MSG_MT_DEST_REFERRED_USER) &&
 				((mc >= SLIM_USR_MC_DEFINE_CHAN &&
-				mc <= SLIM_USR_MC_DISCONNECT_PORT)))
+				mc < SLIM_USR_MC_DISCONNECT_PORT)))
 				return -EREMOTEIO;
 			timeout = wait_for_completion_timeout(&dev->ctrl_up,
 							HZ);
@@ -535,6 +555,11 @@ static int ngd_xferandwait_ack(struct slim_controller *ctrl,
 			ret = -ETIMEDOUT;
 		else
 			ret = txn->ec;
+	}else if (ret == -EREMOTEIO &&
+		(txn->mc == SLIM_USR_MC_CHAN_CTRL ||
+		 txn->mc == SLIM_USR_MC_DISCONNECT_PORT)){
+	    /* HW restarting,channel/port removal should succeed*/
+	    return 0;
 	}
 	if (ret) {
 		if (ret != -EREMOTEIO || txn->mc != SLIM_USR_MC_CHAN_CTRL)
@@ -1010,11 +1035,7 @@ static int ngd_slim_rx_msgq_thread(void *data)
 
 	while (!kthread_should_stop()) {
 		set_current_state(TASK_INTERRUPTIBLE);
-		ret = wait_for_completion_interruptible(notify);
-		if (ret) {
-			dev_err(dev->dev, "rx thread wait err:%d", ret);
-			continue;
-		}
+		wait_for_completion(notify);
 		/* 1 irq notification per message */
 		if (dev->use_rx_msgqs != MSM_MSGQ_ENABLED) {
 			msm_slim_rx_dequeue(dev, (u8 *)buffer);
@@ -1052,14 +1073,10 @@ static int ngd_notify_slaves(void *data)
 	int ret, i = 0;
 	while (!kthread_should_stop()) {
 		set_current_state(TASK_INTERRUPTIBLE);
-		ret = wait_for_completion_timeout(&dev->qmi.slave_notify,
-								HZ);
-		if (!ret) {
-			dev_err(dev->dev, "slave thread wait err:%d", ret);
-			continue;
-		}
+		wait_for_completion(&dev->qmi.slave_notify);
 		/* Probe devices for first notification */
 		if (!i) {
+			i++;
 			dev->err = 0;
 			if (dev->dev->of_node)
 				of_register_slim_devices(&dev->ctrl);
@@ -1072,12 +1089,12 @@ static int ngd_notify_slaves(void *data)
 		} else {
 			slim_framer_booted(ctrl);
 		}
-		i++;
 		mutex_lock(&ctrl->m_ctrl);
 		list_for_each_safe(pos, next, &ctrl->devs) {
+			int j;
 			sbdev = list_entry(pos, struct slim_device, dev_list);
 			mutex_unlock(&ctrl->m_ctrl);
-			for (i = 0; i < LADDR_RETRY; i++) {
+			for (j = 0; j < LADDR_RETRY; j++) {
 				ret = slim_get_logical_addr(sbdev,
 						sbdev->e_addr,
 						6, &sbdev->laddr);

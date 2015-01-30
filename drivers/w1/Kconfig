@@ -1,4 +1,4 @@
-menuconfig W1
+config W1
 	tristate "Dallas's 1-wire support"
 	depends on HAS_IOMEM
 	---help---

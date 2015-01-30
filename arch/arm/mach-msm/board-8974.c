@@ -170,10 +170,14 @@ void __init msm8974_init(void)
 	if (socinfo_init() < 0)
 		pr_err("%s: socinfo_init() failed\n", __func__);
 
-	msm_8974_init_gpiomux();
+	if (of_board_is_sfo())
+		sfo_msm_8974_init_gpiomux();
+	else
+		msm_8974_init_gpiomux();
 	regulator_has_full_constraints();
 	board_dt_populate(adata);
 	msm8974_add_drivers();
+
 }
 
 void __init msm8974_init_very_early(void)

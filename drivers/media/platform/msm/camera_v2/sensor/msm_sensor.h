@@ -48,6 +48,8 @@ struct msm_sensor_fn_t {
 		(struct msm_sensor_ctrl_t *);
 	int (*sensor_power_up) (struct msm_sensor_ctrl_t *);
 	int32_t (*sensor_match_id)(struct msm_sensor_ctrl_t *s_ctrl);
+	int (*sensor_get_af_status) (struct msm_sensor_ctrl_t *, void __user *);
+	int (*sensor_get_af_distance) (struct msm_sensor_ctrl_t *, void __user *);
 };
 
 struct msm_sensor_ctrl_t {
@@ -73,6 +75,8 @@ struct msm_sensor_ctrl_t {
 	uint16_t clk_info_size;
 	void *misc_regulator;
 	enum msm_sensor_state_t sensor_state;
+	int32_t hw_standby;
+	int32_t vreg_ref;
 };
 
 int32_t msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,

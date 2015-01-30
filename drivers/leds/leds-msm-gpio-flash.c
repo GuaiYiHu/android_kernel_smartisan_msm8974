@@ -20,7 +20,7 @@
 #include <linux/gpio.h>
 #include <linux/of.h>
 #include <linux/printk.h>
-
+#include <linux/regulator/consumer.h>
 #define LED_GPIO_FLASH_DRIVER_NAME	"qcom,leds-gpio-flash"
 #define LED_TRIGGER_DEFAULT		"none"
 
@@ -35,6 +35,27 @@ static struct of_device_id led_gpio_flash_of_match[] = {
 	{.compatible = LED_GPIO_FLASH_DRIVER_NAME,},
 	{},
 };
+struct regulator *batfet;
+void batfet_ctrl(struct device *dev, int enable)
+{
+	if (!batfet) {
+		if (enable) {
+			batfet = devm_regulator_get(dev, "batfet");
+			if (!batfet) {
+				pr_err("unable to get batfet reg.\n");
+				batfet = NULL;
+				return;
+			}
+		} else {
+			pr_err("Batfet regulator disable w/o enable\n");
+			return;
+		}
+	}
+	if(enable)
+		regulator_enable(batfet);
+	else
+		regulator_disable(batfet);
+}
 
 static void led_gpio_brightness_set(struct led_classdev *led_cdev,
 				    enum led_brightness value)
@@ -47,12 +68,21 @@ static void led_gpio_brightness_set(struct led_classdev *led_cdev,
 	int flash_en = 0, flash_now = 0;
 
 	if (brightness > LED_HALF) {
-		flash_en = 0;
+
+		batfet_ctrl(led_cdev->dev->parent, 1);
+
+		flash_en = 1;
 		flash_now = 1;
 	} else if (brightness > LED_OFF) {
+
+		batfet_ctrl(led_cdev->dev->parent, 1);
+
 		flash_en = 1;
 		flash_now = 0;
 	} else {
+
+		batfet_ctrl(led_cdev->dev->parent, 0);
+
 		flash_en = 0;
 		flash_now = 0;
 	}
@@ -63,12 +93,12 @@ static void led_gpio_brightness_set(struct led_classdev *led_cdev,
 		       flash_led->flash_en);
 		goto err;
 	}
-	rc = gpio_direction_output(flash_led->flash_now, flash_now);
-	if (rc) {
-		pr_err("%s: Failed to set gpio %d\n", __func__,
-		       flash_led->flash_now);
-		goto err;
-	}
+	//rc = gpio_direction_output(flash_led->flash_now, flash_now);
+	//if (rc) {
+	//	pr_err("%s: Failed to set gpio %d\n", __func__,
+	//	       flash_led->flash_now);
+	//	goto err;
+	//}
 
 	flash_led->brightness = brightness;
 err:
@@ -104,7 +134,7 @@ int __devinit led_gpio_flash_probe(struct platform_device *pdev)
 		flash_led->cdev.default_trigger = temp_str;
 
 	flash_led->flash_en = of_get_named_gpio(node, "qcom,flash-en", 0);
-
+	//pr_err("%s----flash_en =%d\n",__func__,flash_led->flash_en);
 	if (flash_led->flash_en < 0) {
 		dev_err(&pdev->dev,
 			"Looking up %s property in node %s failed. rc =  %d\n",
@@ -121,29 +151,29 @@ int __devinit led_gpio_flash_probe(struct platform_device *pdev)
 		}
 	}
 
-	flash_led->flash_now = of_get_named_gpio(node, "qcom,flash-now", 0);
-	if (flash_led->flash_now < 0) {
-		dev_err(&pdev->dev,
-			"Looking up %s property in node %s failed. rc =  %d\n",
-			"flash-now", node->full_name, flash_led->flash_now);
-		goto error;
-	} else {
-		rc = gpio_request(flash_led->flash_now, "FLASH_NOW");
-		if (rc) {
-			dev_err(&pdev->dev,
-				"%s: Failed to request gpio %d,rc = %d\n",
-				__func__, flash_led->flash_now, rc);
-
-			goto error;
-		}
-	}
+	//flash_led->flash_now = of_get_named_gpio(node, "qcom,flash-now", 0);
+	//if (flash_led->flash_now < 0) {
+	//	dev_err(&pdev->dev,
+	//		"Looking up %s property in node %s failed. rc =  %d\n",
+	//		"flash-now", node->full_name, flash_led->flash_now);
+	//	goto error;
+	//} else {
+	//	rc = gpio_request(flash_led->flash_now, "FLASH_NOW");
+	//	if (rc) {
+	//		dev_err(&pdev->dev,
+	//			"%s: Failed to request gpio %d,rc = %d\n",
+	//			__func__, flash_led->flash_now, rc);
+	//
+	//		goto error;
+	//	}
+	//}
 
 	gpio_tlmm_config(GPIO_CFG(flash_led->flash_en, 0,
 				  GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL,
 				  GPIO_CFG_2MA), GPIO_CFG_ENABLE);
-	gpio_tlmm_config(GPIO_CFG(flash_led->flash_now, 0,
-				  GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL,
-				  GPIO_CFG_2MA), GPIO_CFG_ENABLE);
+	//gpio_tlmm_config(GPIO_CFG(flash_led->flash_now, 0,
+	//			  GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL,
+	//			  GPIO_CFG_2MA), GPIO_CFG_ENABLE);
 
 	rc = of_property_read_string(node, "linux,name", &flash_led->cdev.name);
 	if (rc) {

@@ -74,7 +74,7 @@ module_param(ss_phy_override_deemphasis, int, S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(ss_phy_override_deemphasis, "Override SSPHY demphasis value");
 
 /* Enable Proprietary charger detection */
-static bool prop_chg_detect;
+static bool prop_chg_detect = true;
 module_param(prop_chg_detect, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(prop_chg_detect, "Enable Proprietary charger detection");
 
@@ -2397,7 +2397,9 @@ dwc3_msm_property_is_writeable(struct power_supply *psy,
 	switch (psp) {
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 		return 1;
-	default:
+	case POWER_SUPPLY_PROP_CURRENT_MAX:
+		return 1;
+    default:
 		break;
 	}
 
@@ -2406,7 +2408,8 @@ dwc3_msm_property_is_writeable(struct power_supply *psy,
 
 
 static char *dwc3_msm_pm_power_supplied_to[] = {
-	"battery",
+	"main_battery",
+    "back_battery",
 };
 
 static enum power_supply_property dwc3_msm_pm_power_props_usb[] = {
@@ -3351,11 +3354,12 @@ static int dwc3_msm_pm_resume(struct device *dev)
 
 static int dwc3_msm_runtime_idle(struct device *dev)
 {
-	struct dwc3_msm *mdwc = dev_get_drvdata(dev);
+	//struct dwc3_msm *mdwc = dev_get_drvdata(dev);
 
 	dev_dbg(dev, "DWC3-msm runtime idle\n");
 
-	if (mdwc->ext_chg_active) {
+	//workaround: remove ext_chg_active conditions for charger detection
+	if (true/*mdwc->ext_chg_active*/) {
 		dev_dbg(dev, "Deferring LPM\n");
 		/*
 		 * Charger detection may happen in user space.

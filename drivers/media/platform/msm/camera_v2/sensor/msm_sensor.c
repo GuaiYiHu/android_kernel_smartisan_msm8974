@@ -19,7 +19,7 @@
 #include <mach/rpm-regulator.h>
 #include <mach/rpm-regulator-smd.h>
 #include <linux/regulator/consumer.h>
-
+#include <media/v4l2-event.h>
 #undef CDBG
 #ifdef CONFIG_MSMB_CAMERA_DEBUG
 #define CDBG(fmt, args...) pr_err(fmt, ##args)
@@ -654,6 +654,58 @@ int32_t msm_sensor_init_gpio_pin_tbl(struct device_node *of_node,
 			__func__, __LINE__, rc);
 		goto ERROR;
 	}
+
+	rc = of_property_read_u32(of_node, "qcom,gpio-interrupt", &val);
+	if (!rc) {
+		if (val >= gpio_array_size) {
+			pr_err("%s:%d qcom,gpio-interrupt invalid %d\n",
+				__func__, __LINE__, val);
+			goto ERROR;
+		}
+		gconf->gpio_num_info->gpio_num[SENSOR_GPIO_INT] =
+			gpio_array[val];
+		CDBG("%s qcom,gpio-interrupt %d\n", __func__,
+			gconf->gpio_num_info->gpio_num[SENSOR_GPIO_INT]);
+	} else if (rc != -EINVAL) {
+		pr_err("%s:%d read qcom,gpio-interrupt failed rc %d\n",
+			__func__, __LINE__, rc);
+		goto ERROR;
+	}
+
+	rc = of_property_read_u32(of_node, "qcom,gpio-sio-cs", &val);
+	if (!rc) {
+		if (val >= gpio_array_size) {
+			pr_err("%s:%d qcom,gpio-sio-cs invalid %d\n",
+				__func__, __LINE__, val);
+			goto ERROR;
+		}
+		gconf->gpio_num_info->gpio_num[SENSOR_GPIO_SIO_CS] =
+			gpio_array[val];
+		CDBG("%s qcom,gpio-sio-cs %d\n", __func__,
+			gconf->gpio_num_info->gpio_num[SENSOR_GPIO_SIO_CS]);
+	} else if (rc != -EINVAL) {
+		pr_err("%s:%d read qcom,gpio-sio-cs failed rc %d\n",
+			__func__, __LINE__, rc);
+		goto ERROR;
+	}
+
+	rc = of_property_read_u32(of_node, "qcom,gpio-mod-id", &val);
+	if (!rc) {
+		if (val >= gpio_array_size) {
+			pr_err("%s:%d qcom,gpio-mod-id invalid %d\n",
+				__func__, __LINE__, val);
+			goto ERROR;
+		}
+		gconf->gpio_num_info->gpio_num[SENSOR_GPIO_MOD_ID] =
+			gpio_array[val];
+		CDBG("%s qcom,gpio-mod-id %d\n", __func__,
+			gconf->gpio_num_info->gpio_num[SENSOR_GPIO_MOD_ID]);
+	} else if (rc != -EINVAL) {
+		pr_err("%s:%d read qcom,gpio-mod-id failed rc %d\n",
+			__func__, __LINE__, rc);
+		goto ERROR;
+	}
+
 	return 0;
 
 ERROR:
@@ -1032,6 +1084,11 @@ int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 				power_setting->config_val);
 			break;
 		case SENSOR_VREG:
+			if (s_ctrl->hw_standby > 0) {
+				if (s_ctrl->vreg_ref > 0)
+					goto vreg_config_end;
+			}
+
 			if (power_setting->seq_val >= CAM_VREG_MAX) {
 				pr_err("%s vreg index %d >= max %d\n", __func__,
 					power_setting->seq_val,
@@ -1042,6 +1099,7 @@ int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 				&data->cam_vreg[power_setting->seq_val],
 				(struct regulator **)&power_setting->data[0],
 				1);
+vreg_config_end:
 			break;
 		case SENSOR_I2C_MUX:
 			if (data->i2c_conf && data->i2c_conf->use_i2c_mux)
@@ -1086,7 +1144,9 @@ int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 			break;
 		}
 	}
-
+	s_ctrl->vreg_ref++;
+	if (s_ctrl->vreg_ref > 10000)
+		s_ctrl->vreg_ref = 1;
 	CDBG("%s exit\n", __func__);
 	return 0;
 power_up_failed:
@@ -1261,10 +1321,24 @@ static void msm_sensor_stop_stream(struct msm_sensor_ctrl_t *s_ctrl)
 static int msm_sensor_get_af_status(struct msm_sensor_ctrl_t *s_ctrl,
 			void __user *argp)
 {
-	/* TO-DO: Need to set AF status register address and expected value
-	We need to check the AF status in the sensor register and
-	set the status in the *status variable accordingly*/
-	return 0;
+	if(s_ctrl->func_tbl->sensor_get_af_status != NULL)
+		return s_ctrl->func_tbl->sensor_get_af_status(s_ctrl, argp);
+	return -1;
+}
+
+static int msm_sensor_get_af_distance(struct msm_sensor_ctrl_t *s_ctrl,
+			void __user *argp)
+{
+	if(s_ctrl->func_tbl->sensor_get_af_distance != NULL)
+		return s_ctrl->func_tbl->sensor_get_af_distance(s_ctrl, argp);
+	return -1;
+}
+
+static int msm_sensor_subscribe_event(struct v4l2_subdev *sd, struct v4l2_fh *fh,
+	struct v4l2_event_subscription *sub)
+{
+	//pr_err("%s----enter!!\n",__func__);
+	return v4l2_event_subscribe(fh, sub, 5);
 }
 
 static long msm_sensor_subdev_ioctl(struct v4l2_subdev *sd,
@@ -1281,6 +1355,8 @@ static long msm_sensor_subdev_ioctl(struct v4l2_subdev *sd,
 		return s_ctrl->func_tbl->sensor_config(s_ctrl, argp);
 	case VIDIOC_MSM_SENSOR_GET_AF_STATUS:
 		return msm_sensor_get_af_status(s_ctrl, argp);
+	case VIDIOC_MSM_SENSOR_GET_AF_DISTANCE:
+		return msm_sensor_get_af_distance(s_ctrl, argp);
 	case VIDIOC_MSM_SENSOR_RELEASE:
 		msm_sensor_stop_stream(s_ctrl);
 		return 0;
@@ -1643,8 +1719,8 @@ int32_t msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 				break;
 			}
 			s_ctrl->sensor_state = MSM_SENSOR_POWER_UP;
-			pr_err("%s:%d sensor state %d\n", __func__, __LINE__,
-				s_ctrl->sensor_state);
+			//pr_err("%s:%d sensor state %d\n", __func__, __LINE__,
+				//s_ctrl->sensor_state);
 		} else {
 			rc = -EFAULT;
 		}
@@ -1671,8 +1747,8 @@ int32_t msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 				break;
 			}
 			s_ctrl->sensor_state = MSM_SENSOR_POWER_DOWN;
-			pr_err("%s:%d sensor state %d\n", __func__, __LINE__,
-				s_ctrl->sensor_state);
+			//pr_err("%s:%d sensor state %d\n", __func__, __LINE__,
+				//s_ctrl->sensor_state);
 		} else {
 			rc = -EFAULT;
 		}
@@ -1758,6 +1834,7 @@ static int32_t msm_sensor_v4l2_enum_fmt(struct v4l2_subdev *sd,
 
 static struct v4l2_subdev_core_ops msm_sensor_subdev_core_ops = {
 	.ioctl = msm_sensor_subdev_ioctl,
+	.subscribe_event = msm_sensor_subscribe_event,
 	.s_power = msm_sensor_power,
 };
 
@@ -1792,6 +1869,9 @@ static struct msm_camera_i2c_fn_t msm_sensor_cci_func_tbl = {
 static struct msm_camera_i2c_fn_t msm_sensor_qup_func_tbl = {
 	.i2c_read = msm_camera_qup_i2c_read,
 	.i2c_read_seq = msm_camera_qup_i2c_read_seq,
+#ifdef CONFIG_SMARTISAN_MSM8974SFO
+	.i2c_read_seq_addr = msm_camera_qup_i2c_read_seq_addr,
+#endif
 	.i2c_write = msm_camera_qup_i2c_write,
 	.i2c_write_table = msm_camera_qup_i2c_write_table,
 	.i2c_write_seq_table = msm_camera_qup_i2c_write_seq_table,
@@ -1869,6 +1949,7 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev, void *data)
 		s_ctrl->sensordata->sensor_name);
 	v4l2_set_subdevdata(&s_ctrl->msm_sd.sd, pdev);
 	s_ctrl->msm_sd.sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
+	s_ctrl->msm_sd.sd.flags |= V4L2_SUBDEV_FL_HAS_EVENTS;
 	media_entity_init(&s_ctrl->msm_sd.sd.entity, 0, NULL, 0);
 	s_ctrl->msm_sd.sd.entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
 	s_ctrl->msm_sd.sd.entity.group_id = MSM_CAMERA_SUBDEV_SENSOR;
@@ -1989,6 +2070,7 @@ int32_t msm_sensor_i2c_probe(struct i2c_client *client,
 		s_ctrl->sensor_v4l2_subdev_ops);
 	v4l2_set_subdevdata(&s_ctrl->msm_sd.sd, client);
 	s_ctrl->msm_sd.sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
+	s_ctrl->msm_sd.sd.flags |= V4L2_SUBDEV_FL_HAS_EVENTS;
 	media_entity_init(&s_ctrl->msm_sd.sd.entity, 0, NULL, 0);
 	s_ctrl->msm_sd.sd.entity.type = MEDIA_ENT_T_V4L2_SUBDEV;
 	s_ctrl->msm_sd.sd.entity.group_id = MSM_CAMERA_SUBDEV_SENSOR;

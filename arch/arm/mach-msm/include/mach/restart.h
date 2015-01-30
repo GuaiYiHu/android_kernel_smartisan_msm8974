@@ -30,3 +30,4 @@ extern int pmic_reset_irq;
 
 #endif
 
+void restart_into_emmcdload(void);

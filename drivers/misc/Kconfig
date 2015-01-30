@@ -577,6 +577,11 @@ config HAPTIC_ISA1200
 	help
 	  The ISA1200 is a high performance enhanced haptic driver.
 
+config HAPTIC_LC898301
+	tristate "LC898301 haptic support"
+	depends on I2C
+	default n
+
 config PMIC8058_PWM
 	tristate "Qualcomm PM8058 PWM support"
 	depends on PMIC8058
@@ -664,6 +669,18 @@ config TI_DRV2667
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called ti_drv2667.
+
+config CS8422_SRC
+	tristate "Cirrus Logic CS8422 ASRC driver"
+	depends on I2C
+	help
+	  Cirrus Logic CS8422 ASRC driver.
+
+config CS4398_DAC
+	tristate "Cirrus Logic CS4398 Multi-Bit DAC driver"
+	depends on I2C
+	help
+	  Cirrus Logic CS4398 Multi-Bit DAC driver.
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"

@@ -783,6 +783,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 
 	switch (blank_mode) {
 	case FB_BLANK_UNBLANK:
+		printk(KERN_INFO "%s: UNBLANK\n", __func__);
 		if (!mfd->panel_power_on && mfd->mdp.on_fnc) {
 			ret = mfd->mdp.on_fnc(mfd);
 			if (ret == 0) {
@@ -793,6 +794,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 			mfd->update.type = NOTIFY_TYPE_UPDATE;
 			mfd->update.is_suspend = 0;
 			mutex_unlock(&mfd->update.lock);
+			msleep(20);
 		}
 		break;
 
@@ -801,6 +803,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 	case FB_BLANK_NORMAL:
 	case FB_BLANK_POWERDOWN:
 	default:
+		printk(KERN_INFO "%s: BLANK\n", __func__);
 		if (mfd->panel_power_on && mfd->mdp.off_fnc) {
 			int curr_pwr_state;
 
@@ -1013,8 +1016,13 @@ static int mdss_fb_register(struct msm_fb_data_type *mfd)
 	var->grayscale = 0,	/* No graylevels */
 	var->nonstd = 0,	/* standard pixel format */
 	var->activate = FB_ACTIVATE_VBL,	/* activate it at vsync */
+#ifdef CONFIG_SANFRANCISCO_LCD_JDI
+	var->height = 110,	/* height of picture in mm */
+	var->width = 62,	/* width of picture in mm */
+#else
 	var->height = -1,	/* height of picture in mm */
 	var->width = -1,	/* width of picture in mm */
+#endif
 	var->accel_flags = 0,	/* acceleration flags */
 	var->sync = 0,	/* see FB_SYNC_* */
 	var->rotate = 0,	/* angle we rotate counter clockwise */

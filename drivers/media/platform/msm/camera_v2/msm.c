@@ -709,8 +709,8 @@ int msm_post_event(struct v4l2_event *event, int timeout)
 
 	if (timeout < 0) {
 		mutex_unlock(&session->lock);
-		pr_err("%s : timeout cannot be negative Line %d\n",
-				__func__, __LINE__);
+		//pr_err("%s : timeout cannot be negative Line %d\n",
+				//__func__, __LINE__);
 		return rc;
 	}
 

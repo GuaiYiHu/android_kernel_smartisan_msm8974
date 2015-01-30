@@ -1287,6 +1287,8 @@ static void dapm_seq_run(struct snd_soc_dapm_context *dapm,
 	list_for_each_entry_safe(w, n, list, power_list) {
 		ret = 0;
 
+		dev_dbg(w->dapm->dev, "dapm: powering %s widget %s\n",
+			power_up ? "up" : "down", w->name);
 		/* Do we need to apply any queued changes? */
 		if (sort[w->id] != cur_sort || w->reg != cur_reg ||
 		    w->dapm != cur_dapm || w->subseq != cur_subseq) {

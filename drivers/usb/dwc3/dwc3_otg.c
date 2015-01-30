@@ -536,7 +536,8 @@ static int dwc3_otg_set_power(struct usb_phy *phy, unsigned mA)
 	else if (dotg->charger->chg_type == DWC3_CDP_CHARGER)
 		power_supply_type = POWER_SUPPLY_TYPE_USB_CDP;
 	else if (dotg->charger->chg_type == DWC3_DCP_CHARGER ||
-			dotg->charger->chg_type == DWC3_PROPRIETARY_CHARGER)
+			dotg->charger->chg_type == DWC3_PROPRIETARY_CHARGER ||
+			dotg->charger->chg_type == DWC3_FLOATED_CHARGER)
 		power_supply_type = POWER_SUPPLY_TYPE_USB_DCP;
 	else
 		power_supply_type = POWER_SUPPLY_TYPE_BATTERY;
@@ -783,7 +784,8 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 					 */
 					if (dotg->charger_retry_count ==
 						max_chgr_retry_count) {
-						dwc3_otg_set_power(phy, 0);
+						dev_dbg(phy->dev, "floating charger, allow charge\n");
+						dwc3_otg_set_power(phy, DWC3_IDEV_CHG_MAX);
 						pm_runtime_put_sync(phy->dev);
 						break;
 					}

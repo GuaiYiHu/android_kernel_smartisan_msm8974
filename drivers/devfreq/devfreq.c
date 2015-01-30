@@ -131,8 +131,10 @@ static int devfreq_update_status(struct devfreq *devfreq, unsigned long freq)
 		return 0;
 
 	prev_lev = devfreq_get_freq_level(devfreq, devfreq->previous_freq);
-	if (prev_lev < 0)
+	if (prev_lev < 0) {
+		printk(KERN_WARNING "Warning: previous freq is wrong in %s\n", __FUNCTION__);
 		return 0;
+	}
 
 	if (lev != prev_lev) {
 		devfreq->trans_table[(prev_lev *

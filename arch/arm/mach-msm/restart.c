@@ -74,7 +74,7 @@ static void *emergency_dload_mode_addr;
 
 /* Download mode master kill-switch */
 static int dload_set(const char *val, struct kernel_param *kp);
-static int download_mode = 1;
+static int download_mode = 0;
 module_param_call(download_mode, dload_set, param_get_int,
 			&download_mode, 0644);
 static int panic_prep_restart(struct notifier_block *this,
@@ -90,6 +90,11 @@ static struct notifier_block panic_blk = {
 
 static void set_dload_mode(int on)
 {
+	if (on == 2) {
+		__raw_writel(2, dload_mode_addr + sizeof(unsigned int) * 3);
+	} else if (on == 3) {
+		__raw_writel(0, dload_mode_addr + sizeof(unsigned int) * 3);
+	}
 	if (dload_mode_addr) {
 		__raw_writel(on ? 0xE47B337D : 0, dload_mode_addr);
 		__raw_writel(on ? 0xCE14091A : 0,
@@ -126,20 +131,14 @@ static void enable_emergency_dload_mode(void)
 static int dload_set(const char *val, struct kernel_param *kp)
 {
 	int ret;
-	int old_val = download_mode;
 
 	ret = param_set_int(val, kp);
 
 	if (ret)
 		return ret;
 
-	/* If download_mode is not zero or one, ignore. */
-	if (download_mode >> 1) {
-		download_mode = old_val;
-		return -EINVAL;
-	}
-
 	set_dload_mode(download_mode);
+	download_mode = !!download_mode;
 
 	return 0;
 }
@@ -247,6 +246,21 @@ static irqreturn_t resout_irq_handler(int irq, void *dev_id)
 		;
 	return IRQ_HANDLED;
 }
+
+#ifdef CONFIG_MSM_DLOAD_MODE
+static int __init mem_dump_flag_setup(char *str)
+{
+    return 1;
+}
+#else
+static int __init mem_dump_flag_setup(char *str)
+{
+	printk(KERN_ERR "mem_dump mode is not enabled on target\n");
+	return 1;
+}
+#endif
+
+__setup("memory_dump_enable=", mem_dump_flag_setup);
 
 static void msm_restart_prepare(const char *cmd)
 {

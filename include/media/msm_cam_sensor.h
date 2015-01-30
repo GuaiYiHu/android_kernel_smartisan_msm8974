@@ -10,6 +10,12 @@
 
 #define I2C_SEQ_REG_SETTING_MAX   5
 #define I2C_SEQ_REG_DATA_MAX      20
+#ifdef CONFIG_SMARTISAN_MSM8974SFO
+#define I2C_SEQ_REG_DATA_HEAD     8
+#define I2C_SEQ_REG_DATA_YUYV	  (2 * 1024 * 1024)
+#define I2C_SEQ_REG_DATA_FUJI     (8 * 1024)
+#define I2C_SEQ_REG_DATA_M10MO    (64 * 1024)
+#endif
 #define MAX_CID                   16
 
 #define MSM_SENSOR_MCLK_8HZ   8000000
@@ -59,6 +65,13 @@ enum msm_camera_i2c_reg_addr_type {
 	MSM_CAMERA_I2C_BYTE_ADDR = 1,
 	MSM_CAMERA_I2C_WORD_ADDR,
 	MSM_CAMERA_I2C_3B_ADDR,
+#ifdef CONFIG_SMARTISAN_MSM8974SFO
+	MSM_CAMERA_I2C_4B_ADDR,
+	MSM_CAMERA_I2C_5B_ADDR,
+	MSM_CAMERA_I2C_6B_ADDR,
+	MSM_CAMERA_I2C_7B_ADDR,
+	MSM_CAMERA_I2C_8B_ADDR,
+#endif
 	MSM_CAMERA_I2C_ADDR_TYPE_MAX,
 };
 
@@ -94,6 +107,9 @@ enum msm_sensor_power_seq_gpio_t {
 	SENSOR_GPIO_VANA,
 	SENSOR_GPIO_VDIG,
 	SENSOR_GPIO_VAF,
+	SENSOR_GPIO_INT,
+	SENSOR_GPIO_SIO_CS,
+	SENSOR_GPIO_MOD_ID,
 	SENSOR_GPIO_MAX,
 };
 
@@ -208,6 +224,11 @@ enum camera_vreg_type {
 enum sensor_af_t {
 	SENSOR_AF_FOCUSSED,
 	SENSOR_AF_NOT_FOCUSSED,
+	SENSOR_AF_INVALID_STATUS,
+};
+
+struct af_result_t {
+	enum sensor_af_t af_status;
 };
 
 struct msm_sensor_power_setting {
@@ -273,7 +294,15 @@ struct msm_camera_i2c_read_config {
 	enum msm_camera_i2c_data_type data_type;
 	uint16_t *data;
 };
-
+#ifdef CONFIG_SMARTISAN_MSM8974SFO
+struct msm_camera_i2c_fuji_config {
+	uint16_t slave_addr;
+	uint16_t reg_addr;
+	uint8_t  *reg_data;
+	enum msm_camera_i2c_data_type data_type;
+	uint16_t *data;
+};
+#endif
 struct msm_camera_csid_vc_cfg {
 	uint8_t cid;
 	uint8_t dt;
@@ -420,6 +449,9 @@ enum msm_sensor_cfg_type_t {
 	CFG_SET_STOP_STREAM_SETTING,
 	CFG_GET_SENSOR_INFO,
 	CFG_GET_SENSOR_INIT_PARAMS,
+	CFG_GET_EXPOSURE_TIME,
+	CFG_GET_ISO,
+	CFG_GET_VCM_DAC,
 	CFG_SET_INIT_SETTING,
 	CFG_SET_RESOLUTION,
 	CFG_SET_STOP_STREAM,
@@ -428,13 +460,32 @@ enum msm_sensor_cfg_type_t {
 	CFG_SET_CONTRAST,
 	CFG_SET_SHARPNESS,
 	CFG_SET_ISO,
+	CFG_SET_SCENE,
+	CFG_SET_ZOOM,
+	CFG_SET_FLASH,
+	CFG_SET_HDR,
+	CFG_SET_ACC,
+	CFG_SET_GYRO,
+	CFG_SET_DEGREE,
+	CFG_SET_LENS_ANGLE,
+	CFG_SET_PREPARE_SNAPSHOT,
+	CFG_SET_SHUTTER_SPEED,
 	CFG_SET_EXPOSURE_COMPENSATION,
 	CFG_SET_ANTIBANDING,
 	CFG_SET_BESTSHOT_MODE,
 	CFG_SET_EFFECT,
 	CFG_SET_WHITE_BALANCE,
+	CFG_SET_AE_LOCK,
+	CFG_SET_AE_ROI,
+	CFG_SET_AE_FACE_ROI,
+	CFG_SET_AE_MODE,
+	CFG_SET_AF_LOCK,
+	CFG_SET_AF_ROI,
+	CFG_SET_AF_FACE_ROI,
+	CFG_SET_AF_MODE,
 	CFG_SET_AUTOFOCUS,
 	CFG_CANCEL_AUTOFOCUS,
+	CFG_SET_AWB_LOCK,
 };
 
 enum msm_actuator_cfg_type_t {
@@ -585,7 +636,15 @@ struct msm_camera_led_cfg_t {
 	uint32_t torch_current;
 	uint32_t flash_current[2];
 };
-
+#ifdef CONFIG_SMARTISAN_MSM8974SFO
+struct msm_camera_i2c_seq_reg_data {
+	uint16_t reg_addr;
+	uint8_t reg_data[I2C_SEQ_REG_DATA_MAX];
+	uint16_t reg_data_size;
+	uint8_t *data;
+	uint32_t data_size;
+};
+#endif
 #define VIDIOC_MSM_SENSOR_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 1, struct sensorb_cfg_data)
 
@@ -612,6 +671,9 @@ struct msm_camera_led_cfg_t {
 
 #define VIDIOC_MSM_SENSOR_GET_AF_STATUS \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 9, uint32_t)
+
+#define VIDIOC_MSM_SENSOR_GET_AF_DISTANCE \
+	_IOWR('V', BASE_VIDIOC_PRIVATE + 10, uint32_t)
 
 #define MSM_V4L2_PIX_FMT_META v4l2_fourcc('M', 'E', 'T', 'A') /* META */
 

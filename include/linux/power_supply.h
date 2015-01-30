@@ -57,6 +57,7 @@ enum {
 	POWER_SUPPLY_HEALTH_UNSPEC_FAILURE,
 	POWER_SUPPLY_HEALTH_COLD,
 	POWER_SUPPLY_HEALTH_COOL,
+	POWER_SUPPLY_HEALTH_BACK_BAT_POOR_CONNECTION,
 };
 
 enum {
@@ -154,6 +155,7 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_USB_CDP,	/* Charging Downstream Port */
 	POWER_SUPPLY_TYPE_USB_ACA,	/* Accessory Charger Adapters */
 	POWER_SUPPLY_TYPE_BMS,		/* Battery Monitor System */
+    POWER_SUPPLY_TYPE_BACK_BATTERY, /* Backup battery */
 };
 
 union power_supply_propval {

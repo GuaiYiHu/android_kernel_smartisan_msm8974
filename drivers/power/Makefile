@@ -6,6 +6,9 @@ power_supply-$(CONFIG_LEDS_TRIGGERS)	+= power_supply_leds.o
 
 obj-$(CONFIG_POWER_SUPPLY)	+= power_supply.o
 
+obj-$(CONFIG_BATTERY_SWITCH)   += battery_switch.o
+obj-$(CONFIG_BATTERY_STATE_MACHINE)   += battery_state_machine.o battery_boot_enter.o battery_mainbat_charging.o battery_mainbat_nocharging.o battery_backbat_charging.o battery_backbat_nocharging.o
+
 obj-$(CONFIG_PDA_POWER)		+= pda_power.o
 obj-$(CONFIG_APM_POWER)		+= apm_power.o
 obj-$(CONFIG_MAX8925_POWER)	+= max8925_power.o
@@ -59,6 +62,7 @@ obj-$(CONFIG_SMB137C_CHARGER)	+= smb137c-charger.o
 obj-$(CONFIG_PM8XXX_CCADC)	+= pm8xxx-ccadc.o
 obj-$(CONFIG_PM8921_BMS)	+= pm8921-bms.o
 obj-$(CONFIG_QPNP_BMS)		+= qpnp-bms.o
+obj-$(CONFIG_BATTERY_STC3115)  += stc3115_battery.o
 obj-$(CONFIG_PM8921_CHARGER)	+= pm8921-charger.o
 obj-$(CONFIG_QPNP_CHARGER)	+= qpnp-charger.o
 obj-$(CONFIG_LTC4088_CHARGER)	+= ltc4088-charger.o

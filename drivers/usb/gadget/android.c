@@ -1132,6 +1132,17 @@ static struct android_usb_function audio_function = {
 };
 #endif
 
+/* CHARGE_ONLY */
+static int charge_only_function_bind_config(struct android_usb_function *f,
+						struct usb_configuration *c)
+{
+	return 0;
+}
+
+static struct android_usb_function charge_only_fucntion = {
+	.name       = "charge_only",
+	.bind_config	= charge_only_function_bind_config,
+};
 
 /* DIAG */
 static char diag_clients[32];	    /*enabled DIAG clients- "diag[,diag_mdm]" */
@@ -1794,6 +1805,12 @@ static int mass_storage_function_init(struct android_usb_function *f,
 		config->fsg.nluns++;
 	}
 
+// Smartisan
+// Assume no android_usb_platform_data defined
+	config->fsg.luns[0].cdrom = 1;
+	config->fsg.luns[0].ro = 1;
+	config->fsg.luns[0].nofua = 1;
+// Smartisan end
 	config->fsg.luns[0].removable = 1;
 
 	common = fsg_common_init(NULL, cdev, &config->fsg);
@@ -2044,6 +2061,7 @@ static struct android_usb_function *supported_functions[] = {
 	&audio_source_function,
 #endif
 	&uasp_function,
+	&charge_only_fucntion,
 	NULL
 };
 

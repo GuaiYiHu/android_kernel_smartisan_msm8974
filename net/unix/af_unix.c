@@ -995,6 +995,11 @@ restart:
 		if (!unix_may_send(sk, other))
 			goto out_unlock;
 
+		err = -ECONNREFUSED;
+		/* other is being released */
+		if (!other->sk_socket->sk)
+			goto out_unlock;
+
 		err = security_unix_may_send(sk->sk_socket, other->sk_socket);
 		if (err)
 			goto out_unlock;
@@ -1547,6 +1552,11 @@ restart:
 		goto out_unlock;
 
 	if (sk->sk_type != SOCK_SEQPACKET) {
+		err = -ECONNREFUSED;
+		/* other is being released */
+		if (!other->sk_socket->sk)
+			goto out_unlock;
+
 		err = security_unix_may_send(sk->sk_socket, other->sk_socket);
 		if (err)
 			goto out_unlock;

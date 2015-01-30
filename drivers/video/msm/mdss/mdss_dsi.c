@@ -62,7 +62,7 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata, int enable)
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
-	pr_debug("%s: enable=%d\n", __func__, enable);
+	pr_info("%s: enable=%d\n", __func__, enable);
 
 	if (enable) {
 		ret = msm_dss_enable_vreg(
@@ -745,6 +745,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 
 	switch (event) {
 	case MDSS_EVENT_UNBLANK:
+		fb_notifier_call_chain(LCD_EVENT_ON_START, NULL);
 		rc = mdss_dsi_on(pdata);
 		mdss_dsi_op_mode_config(pdata->panel_info.mipi.mode,
 							pdata);
@@ -755,8 +756,10 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		ctrl_pdata->ctrl_state |= CTRL_STATE_MDP_ACTIVE;
 		if (ctrl_pdata->on_cmds.link_state == DSI_HS_MODE)
 			rc = mdss_dsi_unblank(pdata);
+		fb_notifier_call_chain(LCD_EVENT_ON_END, NULL);
 		break;
 	case MDSS_EVENT_BLANK:
+		fb_notifier_call_chain(LCD_EVENT_OFF_START, NULL);
 		if (ctrl_pdata->off_cmds.link_state == DSI_HS_MODE)
 			rc = mdss_dsi_blank(pdata);
 		break;
@@ -765,6 +768,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		if (ctrl_pdata->off_cmds.link_state == DSI_LP_MODE)
 			rc = mdss_dsi_blank(pdata);
 		rc = mdss_dsi_off(pdata);
+		fb_notifier_call_chain(LCD_EVENT_OFF_END, NULL);
 		break;
 	case MDSS_EVENT_CONT_SPLASH_FINISH:
 		ctrl_pdata->ctrl_state &= ~CTRL_STATE_MDP_ACTIVE;
@@ -1242,6 +1246,39 @@ int dsi_panel_device_register(struct device_node *pan_node,
 		}
 		pinfo->new_fps = pinfo->mipi.frame_rate;
 	}
+#if defined (CONFIG_SANFRANCISCO_LCD_JDI)
+	ctrl_pdata->disp_enn_en_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+		"qcom,platform-enn-enable-gpio", 0);
+
+	if (!gpio_is_valid(ctrl_pdata->disp_enn_en_gpio)) {
+		pr_err("%s:%d, Disp_en gpio not specified\n",
+						__func__, __LINE__);
+	} else {
+		rc = gpio_request(ctrl_pdata->disp_enn_en_gpio, "disp_enn_enable");
+		if (rc) {
+			pr_err("request reset gpio failed, rc=%d\n",
+			       rc);
+			gpio_free(ctrl_pdata->disp_enn_en_gpio);
+			return -ENODEV;
+		}
+	}
+
+	ctrl_pdata->disp_enp_en_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+		"qcom,platform-enp-enable-gpio", 0);
+
+	if (!gpio_is_valid(ctrl_pdata->disp_enp_en_gpio)) {
+		pr_err("%s:%d, Disp_en gpio not specified\n",
+						__func__, __LINE__);
+	} else {
+		rc = gpio_request(ctrl_pdata->disp_enp_en_gpio, "disp_enp_enable");
+		if (rc) {
+			pr_err("request reset gpio failed, rc=%d\n",
+			       rc);
+			gpio_free(ctrl_pdata->disp_enp_en_gpio);
+			return -ENODEV;
+		}
+	}
+#else
 
 	ctrl_pdata->disp_en_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
 		"qcom,platform-enable-gpio", 0);
@@ -1258,6 +1295,7 @@ int dsi_panel_device_register(struct device_node *pan_node,
 			return -ENODEV;
 		}
 	}
+#endif
 
 	if (pinfo->type == MIPI_CMD_PANEL) {
 		ctrl_pdata->disp_te_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
@@ -1313,8 +1351,15 @@ int dsi_panel_device_register(struct device_node *pan_node,
 			pr_err("request reset gpio failed, rc=%d\n",
 				rc);
 			gpio_free(ctrl_pdata->rst_gpio);
+#if defined (CONFIG_SANFRANCISCO_LCD_JDI)
+			if (gpio_is_valid(ctrl_pdata->disp_enp_en_gpio))
+				gpio_free(ctrl_pdata->disp_enp_en_gpio);
+			if (gpio_is_valid(ctrl_pdata->disp_enn_en_gpio))
+				gpio_free(ctrl_pdata->disp_enn_en_gpio);
+#else
 			if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
 				gpio_free(ctrl_pdata->disp_en_gpio);
+#endif
 			return -ENODEV;
 		}
 	}
@@ -1333,8 +1378,15 @@ int dsi_panel_device_register(struct device_node *pan_node,
 				pr_err("request panel mode gpio failed,rc=%d\n",
 									rc);
 				gpio_free(ctrl_pdata->mode_gpio);
+#if defined (CONFIG_SANFRANCISCO_LCD_JDI)
+			if (gpio_is_valid(ctrl_pdata->disp_enp_en_gpio))
+				gpio_free(ctrl_pdata->disp_enp_en_gpio);
+			if (gpio_is_valid(ctrl_pdata->disp_enn_en_gpio))
+				gpio_free(ctrl_pdata->disp_enn_en_gpio);
+#else
 				if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
 					gpio_free(ctrl_pdata->disp_en_gpio);
+#endif
 				if (gpio_is_valid(ctrl_pdata->rst_gpio))
 					gpio_free(ctrl_pdata->rst_gpio);
 				if (gpio_is_valid(ctrl_pdata->disp_te_gpio))
@@ -1394,8 +1446,15 @@ int dsi_panel_device_register(struct device_node *pan_node,
 		pr_err("%s: unable to register MIPI DSI panel\n", __func__);
 		if (ctrl_pdata->rst_gpio)
 			gpio_free(ctrl_pdata->rst_gpio);
+#if defined (CONFIG_SANFRANCISCO_LCD_JDI)
+			if (gpio_is_valid(ctrl_pdata->disp_enp_en_gpio))
+				gpio_free(ctrl_pdata->disp_enp_en_gpio);
+			if (gpio_is_valid(ctrl_pdata->disp_enn_en_gpio))
+				gpio_free(ctrl_pdata->disp_enn_en_gpio);
+#else
 		if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
 			gpio_free(ctrl_pdata->disp_en_gpio);
+#endif
 		return rc;
 	}
 

@@ -457,6 +457,7 @@ long msm_isp_ioctl(struct v4l2_subdev *sd,
 		mutex_unlock(&vfe_dev->core_mutex);
 		break;
 	case VIDIOC_MSM_ISP_REQUEST_STATS_STREAM:
+		vfe_dev->axi_data.front_cam = 1;
 		mutex_lock(&vfe_dev->core_mutex);
 		rc = msm_isp_request_stats_stream(vfe_dev, arg);
 		mutex_unlock(&vfe_dev->core_mutex);
@@ -772,6 +773,7 @@ int msm_isp_cal_word_per_line(uint32_t output_format,
 	case V4L2_PIX_FMT_QRGGB8:
 	case V4L2_PIX_FMT_JPEG:
 	case V4L2_PIX_FMT_META:
+	case V4L2_PIX_FMT_UYVY:
 		val = CAL_WORD(pixel_per_line, 1, 8);
 		break;
 	case V4L2_PIX_FMT_SBGGR10:

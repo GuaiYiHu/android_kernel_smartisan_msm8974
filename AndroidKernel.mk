@@ -65,22 +65,45 @@ endef
 $(KERNEL_OUT):
 	mkdir -p $(KERNEL_OUT)
 
+ifneq ($(USE_CCACHE),)
+
+export CCACHE_COMMAND := $(PWD)/prebuilts/misc/$(CCACHE_HOST_TAG)/ccache/ccache
+ifeq ($(wildcard $(CCACHE_COMMAND)),)
+export CCACHE_COMMAND := $(PWD)/prebuilt/$(CCACHE_HOST_TAG)/ccache/ccache
+endif
+$(warning ccache is $(CCACHE_COMMAND))
+
+else
+
+export CCACHE_COMMAND := 
+
+endif
+
+$(KERNEL_CONFIG) : export CROSS_COMPILE := $(CCACHE_COMMAND) arm-eabi-
+$(TARGET_PREBUILT_INT_KERNEL): export CROSS_COMPILE := $(CCACHE_COMMAND) arm-eabi-
+$(KERNEL_HEADERS_INSTALL): export CROSS_COMPILE := $(CCACHE_COMMAND) arm-eabi-
+
+kernel_verbose := 
+ifneq ($(strip $(SHOW_COMMANDS)),)
+kernel_verbose := V=1
+endif
+
 $(KERNEL_CONFIG): $(KERNEL_OUT)
-	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=arm CROSS_COMPILE=arm-eabi- $(KERNEL_DEFCONFIG)
+	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=arm $(KERNEL_DEFCONFIG) $(kernel_verbose)
 
 $(KERNEL_OUT)/piggy : $(TARGET_PREBUILT_INT_KERNEL)
 	$(hide) gunzip -c $(KERNEL_OUT)/arch/arm/boot/compressed/piggy.gzip > $(KERNEL_OUT)/piggy
 
 $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_OUT) $(KERNEL_CONFIG) $(KERNEL_HEADERS_INSTALL)
-	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=arm CROSS_COMPILE=arm-eabi-
-	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=arm CROSS_COMPILE=arm-eabi- modules
-	$(MAKE) -C kernel O=../$(KERNEL_OUT) INSTALL_MOD_PATH=../../$(KERNEL_MODULES_INSTALL) INSTALL_MOD_STRIP=1 ARCH=arm CROSS_COMPILE=arm-eabi- modules_install
-	$(mv-modules)
-	$(clean-module-folder)
+	+$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=arm $(kernel_verbose)
+	+$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=arm modules $(kernel_verbose)
+	+$(MAKE) -C kernel O=../$(KERNEL_OUT) INSTALL_MOD_PATH=../../$(KERNEL_MODULES_INSTALL) INSTALL_MOD_STRIP=1 ARCH=arm modules_install $(kernel_verbose)
+	$(mv-modules) 
+	$(clean-module-folder) 
 	$(append-dtb)
 
 $(KERNEL_HEADERS_INSTALL): $(KERNEL_OUT) $(KERNEL_CONFIG)
-	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=arm CROSS_COMPILE=arm-eabi- headers_install
+	+$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=arm headers_install
 
 kerneltags: $(KERNEL_OUT) $(KERNEL_CONFIG)
 	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=arm CROSS_COMPILE=arm-eabi- tags

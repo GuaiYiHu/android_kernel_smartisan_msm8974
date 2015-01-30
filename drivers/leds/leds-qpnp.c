@@ -31,6 +31,7 @@
 #define WLED_IDAC_DLY_REG(base, n)	(WLED_MOD_EN_REG(base, n) + 0x01)
 #define WLED_FULL_SCALE_REG(base, n)	(WLED_IDAC_DLY_REG(base, n) + 0x01)
 #define WLED_MOD_SRC_SEL_REG(base, n)	(WLED_FULL_SCALE_REG(base, n) + 0x01)
+#define WLED_CABC_EN_REG(base, n)	(WLED_MOD_SRC_SEL_REG(base, n) + 0x03)
 
 /* wled control registers */
 #define WLED_BRIGHTNESS_CNTL_LSB(base, n)	(base + 0x40 + 2*n)
@@ -55,6 +56,8 @@
 #define WLED_BOOST_OFF			0x00
 #define WLED_EN_MASK			0x80
 #define WLED_NO_MASK			0x00
+#define WLED_CABC_ENABLE		0x80
+#define WLED_CABC_DISABLE		0x00
 #define WLED_CP_SELECT_MAX		0x03
 #define WLED_CP_SELECT_MASK		0x02
 #define WLED_USE_EXT_GEN_MOD_SRC	0x01
@@ -1610,6 +1613,17 @@ static int __devinit qpnp_wled_init(struct qpnp_led_data *led)
 				"WLED max current reg write failed(%d)\n", rc);
 			return rc;
 		}
+
+#ifdef LCD_CABC_ENABLE
+		rc = qpnp_led_masked_write(led,
+			WLED_CABC_EN_REG(led->base, i),
+			WLED_NO_MASK, WLED_CABC_ENABLE);
+		if (rc) {
+			dev_err(&led->spmi_dev->dev,
+				"WLED cabc en reg write failed(%d)\n", rc);
+			return rc;
+		}
+#endif
 
 	}
 

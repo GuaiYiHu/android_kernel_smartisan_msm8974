@@ -24,6 +24,38 @@
 #include <linux/io.h>
 #include "ram_console.h"
 
+#ifdef CONFIG_SMARTISAN_MSM8974SFO
+#include <asm/memory.h>
+#include <asm/setup.h>
+
+#define _RAM_CONSOLE_SIZE	(124 * SZ_1K * 2)
+#define _PERSISTENT_RAM_SIZE	(SZ_1M)
+
+static struct persistent_ram_descriptor pram_descs[] = {
+	{
+		.name = "ram_console",
+		.size = _RAM_CONSOLE_SIZE,
+	},
+};
+
+static struct persistent_ram _persistent_ram = {
+	.size = _PERSISTENT_RAM_SIZE,
+	.num_descs = ARRAY_SIZE(pram_descs),
+	.descs = pram_descs,
+};
+
+static void __init _add_persistent_ram(void)
+{
+	struct persistent_ram *pram = &_persistent_ram;
+	struct membank* bank = &meminfo.bank[meminfo.nr_banks - 1];
+
+	printk("%s, %d: %d\n", __func__, __LINE__, meminfo.nr_banks);
+	pram->start = bank->start + bank->size - _PERSISTENT_RAM_SIZE;
+
+	persistent_ram_early_init(pram);
+}
+#endif
+
 static struct persistent_ram_zone *ram_console_zone;
 static const char *bootinfo;
 static size_t bootinfo_size;
@@ -83,6 +115,23 @@ static struct platform_driver ram_console_driver = {
 
 static int __init ram_console_module_init(void)
 {
+#ifdef CONFIG_SMARTISAN_MSM8974SFO
+	int ret;
+	struct platform_device *pdev;
+
+	_add_persistent_ram();
+
+	pdev = platform_device_alloc("ram_console", -1);
+	if (IS_ERR(pdev)) {
+		printk("%s, %d\n", __func__, __LINE__);
+		return PTR_ERR(pdev);
+	}
+
+	ret = platform_device_add(pdev);
+	if (ret) {
+		printk("%s, %d\n", __func__, __LINE__);
+	}
+#endif
 	return platform_driver_register(&ram_console_driver);
 }
 

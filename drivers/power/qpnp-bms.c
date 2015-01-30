@@ -27,6 +27,8 @@
 #include <linux/qpnp/qpnp-adc.h>
 #include <linux/qpnp/power-on.h>
 #include <linux/of_batterydata.h>
+#include <mach/socinfo.h>
+#include <linux/power/battery_common.h>
 
 /* BMS Register Offsets */
 #define REVISION1			0x0
@@ -294,7 +296,7 @@ static struct of_device_id qpnp_bms_match_table[] = {
 };
 
 static char *qpnp_bms_supplicants[] = {
-	"battery"
+	"main_battery"
 };
 
 static enum power_supply_property msm_bms_power_props[] = {
@@ -309,6 +311,7 @@ static enum power_supply_property msm_bms_power_props[] = {
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
 };
 
+static int fixed_soc;
 static int discard_backup_fcc_data(struct qpnp_bms_chip *chip);
 static void backup_charge_cycle(struct qpnp_bms_chip *chip);
 
@@ -594,7 +597,11 @@ static int get_battery_current(struct qpnp_bms_chip *chip, int *result_ua)
 		pr_err("r_sense is zero\n");
 		return -EINVAL;
 	}
-
+/*
+	if (!current_used_batt) {
+		*result_ua = 6000;
+		return 0;
+	}*/
 	mutex_lock(&chip->bms_output_lock);
 	lock_output_data(chip);
 	read_vsense_avg(chip, &vsense_uv);
@@ -613,8 +620,12 @@ static int get_battery_current(struct qpnp_bms_chip *chip, int *result_ua)
 
 	pr_debug("%d uA err compensated ibat=%llduA\n",
 			*result_ua, temp_current);
-	*result_ua = temp_current;
-	return 0;
+//    if (!current_used_batt)
+//        *result_ua = -6000;
+//    else
+        *result_ua = temp_current;
+
+    return 0;
 }
 
 static int get_battery_voltage(struct qpnp_bms_chip *chip, int *result_uv)
@@ -622,10 +633,13 @@ static int get_battery_voltage(struct qpnp_bms_chip *chip, int *result_uv)
 	int rc;
 	struct qpnp_vadc_result adc_result;
 
-	rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &adc_result);
+	if (of_board_is_sfo_v40())
+		rc = qpnp_vadc_read(chip->vadc_dev, P_MUX2_1_3, &adc_result);
+	else
+		rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &adc_result);
 	if (rc) {
 		pr_err("error reading adc channel = %d, rc = %d\n",
-					VBAT_SNS, rc);
+					P_MUX2_1_3, rc);
 		return rc;
 	}
 	pr_debug("mvolts phy = %lld meas = 0x%llx\n", adc_result.physical,
@@ -753,7 +767,7 @@ static int get_battery_status(struct qpnp_bms_chip *chip)
 	union power_supply_propval ret = {0,};
 
 	if (chip->batt_psy == NULL)
-		chip->batt_psy = power_supply_get_by_name("battery");
+		chip->batt_psy = power_supply_get_by_name("main_battery");
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the status property */
 		chip->batt_psy->get_property(chip->batt_psy,
@@ -771,7 +785,7 @@ static bool is_battery_charging(struct qpnp_bms_chip *chip)
 	union power_supply_propval ret = {0,};
 
 	if (chip->batt_psy == NULL)
-		chip->batt_psy = power_supply_get_by_name("battery");
+		chip->batt_psy = power_supply_get_by_name("main_battery");
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the status property */
 		chip->batt_psy->get_property(chip->batt_psy,
@@ -806,7 +820,7 @@ static bool is_battery_present(struct qpnp_bms_chip *chip)
 			return false;
 	}
 	if (chip->batt_psy == NULL)
-		chip->batt_psy = power_supply_get_by_name("battery");
+		chip->batt_psy = power_supply_get_by_name("main_battery");
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the present property */
 		chip->batt_psy->get_property(chip->batt_psy,
@@ -825,7 +839,7 @@ static int get_battery_insertion_ocv_uv(struct qpnp_bms_chip *chip)
 	int rc, vbat;
 
 	if (chip->batt_psy == NULL)
-		chip->batt_psy = power_supply_get_by_name("battery");
+		chip->batt_psy = power_supply_get_by_name("main_battery");
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the ocv property */
 		rc = chip->batt_psy->get_property(chip->batt_psy,
@@ -853,7 +867,7 @@ static bool is_batfet_closed(struct qpnp_bms_chip *chip)
 	union power_supply_propval ret = {0,};
 
 	if (chip->batt_psy == NULL)
-		chip->batt_psy = power_supply_get_by_name("battery");
+		chip->batt_psy = power_supply_get_by_name("main_battery");
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the online property */
 		chip->batt_psy->get_property(chip->batt_psy,
@@ -882,16 +896,24 @@ static int get_simultaneous_batt_v_and_i(struct qpnp_bms_chip *chip,
 			pr_err("bms current read failed with rc: %d\n", rc);
 			return rc;
 		}
-		rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &v_result);
+		if (of_board_is_sfo_v40())
+			rc = qpnp_vadc_read(chip->vadc_dev, P_MUX2_1_3, &v_result);
+		else
+			rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &v_result);
 		if (rc) {
 			pr_err("vadc read failed with rc: %d\n", rc);
 			return rc;
 		}
 		*vbat_uv = (int)v_result.physical;
 	} else {
-		rc = qpnp_iadc_vadc_sync_read(chip->iadc_dev,
+		if (of_board_is_sfo_v40())
+			rc = qpnp_iadc_vadc_sync_read(chip->iadc_dev,
 					iadc_channel, &i_result,
-					VBAT_SNS, &v_result);
+					P_MUX2_1_3, &v_result);
+		else
+			rc = qpnp_iadc_vadc_sync_read(chip->iadc_dev,
+					iadc_channel, &i_result,
+					VBAT_SNS, &v_result);			
 		if (rc) {
 			pr_err("adc sync read failed with rc: %d\n", rc);
 			return rc;
@@ -900,28 +922,54 @@ static int get_simultaneous_batt_v_and_i(struct qpnp_bms_chip *chip,
 		* reverse the current read by the iadc, since the bms uses
 		* flipped battery current polarity.
 		*/
-		*ibat_ua = -1 * (int)i_result.result_ua;
+//        if (!current_used_batt)
+//            *ibat_ua = -6000;
+//        else
+            *ibat_ua = -1 * (int)i_result.result_ua;
+
 		*vbat_uv = (int)v_result.physical;
 	}
 
+    pr_debug("get_simultaneous_batt_v_and_i,iadc_channel %d ibat_ua %d vbat_uv %d\n", iadc_channel, *ibat_ua, *vbat_uv);
 	return 0;
 }
 
-static int estimate_ocv(struct qpnp_bms_chip *chip)
+static int get_rbatt(struct qpnp_bms_chip *chip,
+ int soc_rbatt_mohm, int batt_temp)
 {
-	int ibat_ua, vbat_uv, ocv_est_uv;
-	int rc;
-	int rbatt_mohm = chip->default_rbatt_mohm + chip->r_conn_mohm
-					+ chip->rbatt_capacitive_mohm;
+	 int rbatt_mohm, scalefactor;
 
+	 rbatt_mohm = chip->default_rbatt_mohm;
+	 if (chip->rbatt_sf_lut == NULL) {
+	 pr_debug("RBATT = %d\n", rbatt_mohm);
+	 return rbatt_mohm;
+	 }
+
+     batt_temp = batt_temp / 10;
+	 /* Convert the batt_temp to DegC from deciDegC */
+	 scalefactor = interpolate_scalingfactor(chip->rbatt_sf_lut,
+	 batt_temp, soc_rbatt_mohm);
+	 rbatt_mohm = (rbatt_mohm * scalefactor) / 100;
+
+	 rbatt_mohm += chip->r_conn_mohm;
+	 rbatt_mohm += chip->rbatt_capacitive_mohm;
+	 return rbatt_mohm;
+}
+
+#define DEFAULT_RBATT_SOC 50
+static int estimate_ocv(struct qpnp_bms_chip *chip, int batt_temp)
+{
+	int ibat_ua, vbat_uv, ocv_est_uv, rbatt_mohm, rc;
+
+    rbatt_mohm = get_rbatt(chip, DEFAULT_RBATT_SOC, batt_temp);
 	rc = get_simultaneous_batt_v_and_i(chip, &ibat_ua, &vbat_uv);
 	if (rc) {
 		pr_err("simultaneous failed rc = %d\n", rc);
 		return rc;
 	}
-
+	pr_debug("estimate_ocv vbat_uv: %d ibat_ua: %d rbatt_mohm: %d\n", vbat_uv, ibat_ua, rbatt_mohm);
 	ocv_est_uv = vbat_uv + (ibat_ua * rbatt_mohm) / 1000;
-	pr_debug("estimated pon ocv = %d\n", ocv_est_uv);
+	pr_debug("estimated pon ocv = %d, vbat_uv = %d ibat_ua = %d rbatt_mohm = %d\n", ocv_est_uv, vbat_uv, ibat_ua, rbatt_mohm);
 	return ocv_est_uv;
 }
 
@@ -1049,7 +1097,7 @@ static int read_soc_params_raw(struct qpnp_bms_chip *chip,
 		if (raw->last_good_ocv_uv < MIN_OCV_UV
 				|| warm_reset > 0) {
 			pr_debug("OCV is stale or bad, estimating new OCV.\n");
-			chip->last_ocv_uv = estimate_ocv(chip);
+			chip->last_ocv_uv = estimate_ocv(chip, batt_temp);
 			raw->last_good_ocv_uv = chip->last_ocv_uv;
 			reset_cc(chip, CLEAR_CC | CLEAR_SHDW_CC);
 			pr_debug("New PON_OCV_UV = %d, cc = %llx\n",
@@ -1211,27 +1259,6 @@ static int calculate_cc(struct qpnp_bms_chip *chip, int64_t cc,
 				*software_counter + cc_uah);
 		return *software_counter + cc_uah;
 	}
-}
-
-static int get_rbatt(struct qpnp_bms_chip *chip,
-					int soc_rbatt_mohm, int batt_temp)
-{
-	int rbatt_mohm, scalefactor;
-
-	rbatt_mohm = chip->default_rbatt_mohm;
-	if (chip->rbatt_sf_lut == NULL)  {
-		pr_debug("RBATT = %d\n", rbatt_mohm);
-		return rbatt_mohm;
-	}
-	/* Convert the batt_temp to DegC from deciDegC */
-	batt_temp = batt_temp / 10;
-	scalefactor = interpolate_scalingfactor(chip->rbatt_sf_lut,
-						batt_temp, soc_rbatt_mohm);
-	rbatt_mohm = (rbatt_mohm * scalefactor) / 100;
-
-	rbatt_mohm += chip->r_conn_mohm;
-	rbatt_mohm += chip->rbatt_capacitive_mohm;
-	return rbatt_mohm;
 }
 
 #define IAVG_MINIMAL_TIME	2
@@ -1832,14 +1859,17 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 			if (chip->catch_up_time_sec < 0)
 				chip->catch_up_time_sec = 0;
 			chip->charge_start_tm_sec = last_change_sec;
+			pr_debug("calculating soc for the first time %d\n", chip->charge_start_tm_sec);
 		}
 
 		charge_time_sec = min(SOC_CATCHUP_SEC_MAX, (int)last_change_sec
 				- chip->charge_start_tm_sec);
 
 		/* end catchup if calculated soc and last soc are same */
-		if (chip->last_soc == soc)
+		if (chip->last_soc == soc) {
 			chip->catch_up_time_sec = 0;
+			pr_debug("end catchup if calculated soc and last soc are same\n" );
+		}
 	}
 
 	if (chip->last_soc != -EINVAL) {
@@ -1900,7 +1930,7 @@ static int report_state_of_charge(struct qpnp_bms_chip *chip)
 	if (bms_fake_battery != -EINVAL) {
 		pr_debug("Returning Fake SOC = %d%%\n", bms_fake_battery);
 		return bms_fake_battery;
-	} else if (chip->use_voltage_soc)
+	} else if (chip->use_voltage_soc /*|| !current_used_batt*/)
 		return report_voltage_based_soc(chip);
 	else
 		return report_cc_based_soc(chip);
@@ -2097,7 +2127,7 @@ static int adjust_soc(struct qpnp_bms_chip *chip, struct soc_params *params,
 	 */
 	if (!wake_lock_active(&chip->low_voltage_wake_lock) &&
 			(soc_est == soc
-			|| soc_est > chip->adjust_soc_low_threshold
+			/*|| soc_est > chip->adjust_soc_low_threshold*/
 			|| soc >= NO_ADJUST_HIGH_SOC_THRESHOLD))
 		goto out;
 
@@ -2439,6 +2469,17 @@ done_calculating:
 	mutex_lock(&chip->last_soc_mutex);
 	previous_soc = chip->calculated_soc;
 	chip->calculated_soc = new_calculated_soc;
+
+    /* fixed calculated_soc when switch to backup battery */
+	if (main_to_bak || !current_used_batt) {
+		chip->calculated_soc = fixed_soc;
+		pr_debug("main_to_bak or back trickle occur, fixed_soc: %d\n", fixed_soc);
+	} else {
+        chip->calculated_soc = new_calculated_soc;
+		fixed_soc = chip->calculated_soc;
+		pr_debug("main battery power supply, update calculated_soc %d\n", chip->calculated_soc);
+	}
+
 	pr_debug("CC based calculated SOC = %d\n", chip->calculated_soc);
 	if (chip->last_soc_invalid) {
 		chip->last_soc_invalid = false;
@@ -2516,8 +2557,9 @@ static int recalculate_raw_soc(struct qpnp_bms_chip *chip)
 	struct soc_params params;
 
 	bms_stay_awake(&chip->soc_wake_source);
-	if (chip->use_voltage_soc) {
+	if (chip->use_voltage_soc /*|| !current_used_batt*/) {
 		soc = calculate_soc_from_voltage(chip);
+		pr_debug("calculate_soc_from_voltage soc: %d\n", soc);
 	} else {
 		if (!chip->batfet_closed)
 			qpnp_iadc_calibrate_for_trim(chip->iadc_dev, false);
@@ -2547,6 +2589,7 @@ static int recalculate_raw_soc(struct qpnp_bms_chip *chip)
 			} else {
 				soc = calculate_raw_soc(chip, &raw,
 							&params, batt_temp);
+				pr_debug("calculate_raw_soc soc: %d\n", soc);
 			}
 			mutex_unlock(&chip->last_ocv_uv_mutex);
 		}
@@ -2568,7 +2611,7 @@ static int recalculate_soc(struct qpnp_bms_chip *chip)
 		qpnp_adc_tm_channel_measure(chip->adc_tm_dev,
 					&chip->vbat_monitor_params);
 	mutex_unlock(&chip->vbat_monitor_mutex);
-	if (chip->use_voltage_soc) {
+	if (chip->use_voltage_soc /*|| !current_used_batt*/) {
 		soc = calculate_soc_from_voltage(chip);
 	} else {
 		if (!chip->batfet_closed)
@@ -2600,7 +2643,6 @@ static void recalculate_work(struct work_struct *work)
 	struct qpnp_bms_chip *chip = container_of(work,
 				struct qpnp_bms_chip,
 				recalc_work);
-
 	recalculate_soc(chip);
 }
 
@@ -2733,7 +2775,10 @@ static void btm_notify_vbat(enum qpnp_tm_state state, void *ctx)
 	struct qpnp_vadc_result result;
 	int rc;
 
-	rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &result);
+	if (of_board_is_sfo_v40())
+		rc = qpnp_vadc_read(chip->vadc_dev, P_MUX2_1_3, &result);
+	else
+		rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &result);
 	pr_debug("vbat = %lld, raw = 0x%x\n", result.physical, result.adc_code);
 
 	get_battery_voltage(chip, &vbat_uv);
@@ -2797,7 +2842,10 @@ static int setup_vbat_monitoring(struct qpnp_bms_chip *chip)
 	chip->vbat_monitor_params.high_thr = chip->max_voltage_uv
 							- VBATT_ERROR_MARGIN;
 	chip->vbat_monitor_params.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
-	chip->vbat_monitor_params.channel = VBAT_SNS;
+	if (of_board_is_sfo_v40())
+		chip->vbat_monitor_params.channel = P_MUX2_1_3;
+	else
+		chip->vbat_monitor_params.channel = VBAT_SNS;
 	chip->vbat_monitor_params.btm_ctx = (void *)chip;
 	chip->vbat_monitor_params.timer_interval = ADC_MEAS1_INTERVAL_1S;
 	chip->vbat_monitor_params.threshold_notification = &btm_notify_vbat;
@@ -3312,6 +3360,7 @@ static void batfet_status_check(struct qpnp_bms_chip *chip)
 			qpnp_iadc_resume_calibration(chip->iadc_dev);
 		}
 	}
+	pr_debug("batfet_status_check batfet_closed %d\n", batfet_closed);
 }
 
 static void battery_insertion_check(struct qpnp_bms_chip *chip)
@@ -3340,6 +3389,14 @@ static void battery_insertion_check(struct qpnp_bms_chip *chip)
 		/* a new battery was inserted or removed, so force a soc
 		 * recalculation to update the SoC */
 		schedule_work(&chip->recalc_work);
+	} else if (bak_to_main) {
+        chip->new_battery = true;
+        bak_to_main = 0;
+        chip->insertion_ocv_uv = g_main_voltage;
+		/* a new battery was inserted or removed, so force a soc
+		 * recalculation to update the SoC */
+		schedule_work(&chip->recalc_work);
+        printk("bak_to_main occur, recalculate_soc, insertion_ocv_uv: %d\n",  chip->insertion_ocv_uv);
 	}
 	mutex_unlock(&chip->vbat_monitor_mutex);
 }
@@ -3525,7 +3582,7 @@ static void load_shutdown_data(struct qpnp_bms_chip *chip)
 	calculated_soc = recalculate_raw_soc(chip);
 	shutdown_soc_out_of_limit = (abs(shutdown_soc - calculated_soc)
 			> chip->shutdown_soc_valid_limit);
-	pr_debug("calculated_soc = %d, valid_limit = %d\n",
+	printk("calculated_soc = %d, valid_limit = %d\n",
 			calculated_soc, chip->shutdown_soc_valid_limit);
 
 	/*
@@ -3542,7 +3599,7 @@ static void load_shutdown_data(struct qpnp_bms_chip *chip)
 		chip->battery_removed = true;
 		chip->shutdown_soc_invalid = true;
 		chip->shutdown_iavg_ma = MIN_IAVG_MA;
-		pr_debug("Ignoring shutdown SoC: invalid = %d, offmode = %d, out_of_limit = %d\n",
+		printk("Ignoring shutdown SoC: invalid = %d, offmode = %d, out_of_limit = %d\n",
 				invalid_stored_soc, offmode_battery_replaced,
 				shutdown_soc_out_of_limit);
 	} else {
@@ -3550,7 +3607,7 @@ static void load_shutdown_data(struct qpnp_bms_chip *chip)
 		chip->shutdown_soc = shutdown_soc;
 	}
 
-	pr_debug("raw_soc = %d shutdown_soc = %d shutdown_iavg = %d shutdown_soc_invalid = %d, battery_removed = %d\n",
+	printk("raw_soc = %d shutdown_soc = %d shutdown_iavg = %d shutdown_soc_invalid = %d, battery_removed = %d\n",
 			calculated_soc,
 			chip->shutdown_soc,
 			chip->shutdown_iavg_ma,
@@ -3611,6 +3668,8 @@ static int set_battery_data(struct qpnp_bms_chip *chip)
 		batt_data = &QRD_4v35_2000mAh_data;
 	} else if (chip->batt_type == BATT_QRD_4V2_1300MAH) {
 		batt_data = &qrd_4v2_1300mah_data;
+	} else if (chip->batt_type == BATT_SFO_4V35_2570MAH) {
+		batt_data = &sfo_4v35_2570mah_data;
 	} else {
 		battery_id = read_battery_id(chip);
 		if (battery_id < 0) {
@@ -3622,8 +3681,8 @@ static int set_battery_data(struct qpnp_bms_chip *chip)
 		node = of_find_node_by_name(chip->spmi->dev.of_node,
 				"qcom,battery-data");
 		if (!node) {
-			pr_warn("No available batterydata, using palladium 1500\n");
-			batt_data = &palladium_1500_data;
+			pr_warn("No available batterydata, using sfo 2570\n");
+			batt_data = &sfo_4v35_2570mah_data;
 			goto assign_data;
 		}
 		batt_data = devm_kzalloc(chip->dev,
@@ -4104,9 +4163,10 @@ static int refresh_die_temp_monitor(struct qpnp_bms_chip *chip)
 
 	rc = qpnp_vadc_read(chip->vadc_dev, DIE_TEMP, &result);
 
-	pr_debug("low = %lld, high = %lld\n",
+	pr_debug("low = %lld, high = %lld, margin = %d\n",
 			result.physical - chip->temperature_margin,
-			result.physical + chip->temperature_margin);
+			result.physical + chip->temperature_margin,
+			chip->temperature_margin);
 	chip->die_temp_monitor_params.high_temp = result.physical
 						+ chip->temperature_margin;
 	chip->die_temp_monitor_params.low_temp = result.physical
@@ -4331,8 +4391,8 @@ static int __devinit qpnp_bms_probe(struct spmi_device *spmi)
 	vbatt = 0;
 	rc = get_battery_voltage(chip, &vbatt);
 	if (rc) {
-		pr_err("error reading vbat_sns adc channel = %d, rc = %d\n",
-						VBAT_SNS, rc);
+		pr_err("error reading P_MUX2_1_3 adc channel = %d, rc = %d\n",
+						P_MUX2_1_3, rc);
 		goto unregister_dc;
 	}
 

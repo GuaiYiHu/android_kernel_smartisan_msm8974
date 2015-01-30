@@ -582,7 +582,7 @@ int __msm_jpeg_open(struct msm_jpeg_device *pgmn_dev)
 	mutex_lock(&pgmn_dev->lock);
 	if (pgmn_dev->open_count) {
 		/* only open once */
-		JPEG_PR_ERR("%s:%d] busy\n", __func__, __LINE__);
+		JPEG_DBG("%s:%d] busy\n", __func__, __LINE__);
 		mutex_unlock(&pgmn_dev->lock);
 		return -EBUSY;
 	}

@@ -2808,16 +2808,14 @@ int slim_reconfigure_now(struct slim_device *sb)
 		ret = slim_processtxn(ctrl, SLIM_MSG_DEST_BROADCAST,
 			SLIM_MSG_MC_NEXT_SUBFRAME_MODE, 0, SLIM_MSG_MT_CORE,
 			NULL, (u8 *)&subframe, 1, 4, NULL, 0, NULL);
-		dev_dbg(&ctrl->dev, "sending subframe:%d,ret:%d\n",
-				(int)wbuf[0], ret);
+		pr_err("sending subframe:%x,ret:%d\n", wbuf[0], ret);
 	}
 	if (!ret && clkgear != ctrl->clkgear) {
 		wbuf[0] = (u8)(clkgear & 0xFF);
 		ret = slim_processtxn(ctrl, SLIM_MSG_DEST_BROADCAST,
 			SLIM_MSG_MC_NEXT_CLOCK_GEAR, 0, SLIM_MSG_MT_CORE,
 			NULL, wbuf, 1, 4, NULL, 0, NULL);
-		dev_dbg(&ctrl->dev, "sending clkgear:%d,ret:%d\n",
-				(int)wbuf[0], ret);
+		pr_err("sending clkgear:%x,ret:%d\n", wbuf[0], ret);
 	}
 	if (ret)
 		goto revert_reconfig;
@@ -2948,6 +2946,7 @@ int slim_reconfigure_now(struct slim_device *sb)
 		sb->cur_msgsl = sb->pending_msgsl;
 		slim_chan_changes(sb, false);
 		mutex_unlock(&ctrl->sched.m_reconf);
+		dev_dbg(&ctrl->dev, "slim reconfig done!");
 		return 0;
 	}
 
@@ -3006,8 +3005,8 @@ int slim_control_ch(struct slim_device *sb, u16 chanh,
 		u8 add_mark_removal  = true;
 
 		slc = &ctrl->chans[chan];
-		dev_dbg(&ctrl->dev, "chan:%d,ctrl:%d,def:%d", chan, chctrl,
-					slc->def);
+		pr_err("chan:%d,ctrl:%d,def:%d, ref:%d", slc->chan,
+				chctrl, slc->def, slc->ref);
 		if (slc->state < SLIM_CH_DEFINED) {
 			ret = -ENOTCONN;
 			break;
