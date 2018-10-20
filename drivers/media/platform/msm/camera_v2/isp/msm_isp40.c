@@ -370,6 +370,9 @@ static void msm_vfe40_process_camif_irq(struct vfe_device *vfe_dev,
 	uint32_t irq_status0, uint32_t irq_status1,
 	struct msm_isp_timestamp *ts)
 {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	unsigned long flags;
+#endif
 	if (!(irq_status0 & 0xF))
 		return;
 
@@ -384,6 +387,23 @@ static void msm_vfe40_process_camif_irq(struct vfe_device *vfe_dev,
 			msm_isp_update_framedrop_reg(vfe_dev);
 		}
 	}
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (vfe_dev->axi_data.front_cam != 1) {
+		spin_lock_irqsave(&vfe_dev->shared_data_lock, flags);
+		if (vfe_dev->axi_data.frame_status == VFE_FRAME_STATUS_WAIT_EOF) {
+			vfe_dev->axi_data.frame_status = VFE_FRAME_STATUS_DEFAULT;
+			complete(&vfe_dev->stream_config_complete);
+		}
+		if (irq_status0 & (1 << 0)) {
+			vfe_dev->axi_data.frame_status = VFE_FRAME_STATUS_SOF;
+		} else if (irq_status0 & (1 << 1)) {
+			vfe_dev->axi_data.frame_status = VFE_FRAME_STATUS_EOF;
+		}
+		spin_unlock_irqrestore(&vfe_dev->shared_data_lock, flags);
+	}
+#endif
+
 	if (irq_status0 & (1 << 1))
 		ISP_DBG("%s: EOF IRQ\n", __func__);
 	if (irq_status0 & (1 << 2))

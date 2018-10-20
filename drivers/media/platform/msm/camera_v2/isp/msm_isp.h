@@ -323,6 +323,15 @@ enum msm_wm_ub_cfg_type {
 	MSM_WM_UB_CFG_MAX_NUM
 };
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+enum vfe_frame_status {
+	VFE_FRAME_STATUS_DEFAULT,
+	VFE_FRAME_STATUS_SOF,
+	VFE_FRAME_STATUS_EOF,
+	VFE_FRAME_STATUS_WAIT_EOF,
+};
+#endif
+
 struct msm_vfe_axi_shared_data {
 	struct msm_vfe_axi_hardware_info *hw_info;
 	struct msm_vfe_axi_stream stream_info[MAX_NUM_STREAM];
@@ -334,6 +343,10 @@ struct msm_vfe_axi_shared_data {
 	struct msm_vfe_axi_composite_info
 		composite_info[MAX_NUM_COMPOSITE_MASK];
 	uint8_t num_used_composite_mask;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	uint8_t front_cam;
+	enum vfe_frame_status frame_status;
+#endif
 	uint32_t stream_update;
 	atomic_t axi_cfg_update;
 	enum msm_isp_camif_update_state pipeline_update;

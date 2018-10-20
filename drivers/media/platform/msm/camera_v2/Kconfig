@@ -173,6 +173,12 @@ config MT9M114
 		1280 * 270. It does not support auto focus. It supports
 		few special effects like saturation.
 
+config M10MO
+	bool "ISP M10MO (YUV 1.26MP)"
+	depends on MSMB_CAMERA
+	---help---
+		M10MO is Fujitsu ISP.
+
 config SP1628
 	bool "Sensor SP1628 (YUV 720P)"
 	depends on MSMB_CAMERA
