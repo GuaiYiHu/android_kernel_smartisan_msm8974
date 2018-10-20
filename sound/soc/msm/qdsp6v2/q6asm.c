@@ -364,15 +364,37 @@ void send_asm_custom_topology(struct audio_client *ac)
 	struct list_head		*ptr, *next;
 	int				result;
 	int				size = 4096;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (!set_custom_topology)
+		return;
+#endif
 	get_asm_custom_topology(&cal_block);
 	if (cal_block.cal_size == 0) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		pr_debug("%s: no cal to send addr= 0x%pa\n",
+				__func__, &cal_block.cal_paddr);
+		return;
+#else
 		pr_debug("%s: no cal to send addr= 0x%x\n",
 				__func__, cal_block.cal_paddr);
 		goto done;
+#endif
 	}
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 	if (set_custom_topology) {
+#endif
+#ifdef CONFIG_VENDOR_SMARTISAN
+		common_client.mmap_apr = q6asm_mmap_apr_reg();
+		common_client.apr = common_client.mmap_apr;
+#endif
 		if (common_client.mmap_apr == NULL) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+			pr_err("%s: q6asm_mmap_apr_reg failed\n",
+				__func__);
+			result = -EPERM;
+			goto mmap_fail;
+#else
 			common_client.mmap_apr = q6asm_mmap_apr_reg();
 			common_client.apr = common_client.mmap_apr;
 			if (common_client.mmap_apr == NULL) {
@@ -381,6 +403,7 @@ void send_asm_custom_topology(struct audio_client *ac)
 				result = -EPERM;
 				goto done;
 			}
+#endif
 		}
 		/* Only call this once */
 		set_custom_topology = 0;
@@ -389,17 +412,28 @@ void send_asm_custom_topology(struct audio_client *ac)
 		if (common_client.port[IN].buf == NULL) {
 			pr_err("%s: common buf is NULL\n",
 				__func__);
+#ifdef CONFIG_VENDOR_SMARTISAN
+			goto err_map;
+#else
 			goto done;
+#endif
 		}
 		common_client.port[IN].buf->phys = cal_block.cal_paddr;
 
 		result = q6asm_memory_map_regions(&common_client,
 							IN, size, 1, 1);
 		if (result < 0) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+			pr_err("%s: mmap did not work! addr = 0x%pa, size = %zd\n",
+				__func__, &cal_block.cal_paddr,
+				cal_block.cal_size);
+			goto err_map;
+#else
 			pr_err("%s: mmap did not work! addr = 0x%x, size = %d\n",
 				__func__, cal_block.cal_paddr,
 				cal_block.cal_size);
 			goto done;
+#endif
 		}
 
 		list_for_each_safe(ptr, next,
@@ -412,6 +446,7 @@ void send_asm_custom_topology(struct audio_client *ac)
 			}
 		}
 
+#ifndef CONFIG_VENDOR_SMARTISAN
 		result = q6asm_mmap_apr_dereg();
 		if (result < 0) {
 			pr_err("%s: q6asm_mmap_apr_dereg failed, err %d\n",
@@ -420,6 +455,7 @@ void send_asm_custom_topology(struct audio_client *ac)
 			common_client.mmap_apr = NULL;
 		}
 	}
+#endif
 
 	q6asm_add_hdr_custom_topology(ac, &asm_top.hdr,
 				      APR_PKT_SIZE(APR_HDR_SIZE,
@@ -439,7 +475,11 @@ void send_asm_custom_topology(struct audio_client *ac)
 	if (result < 0) {
 		pr_err("%s: Set topologies failed payload = 0x%x\n",
 			__func__, cal_block.cal_paddr);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		goto err_unmap;
+#else
 		goto done;
+#endif
 	}
 
 	result = wait_event_timeout(ac->cmd_wait,
@@ -447,11 +487,26 @@ void send_asm_custom_topology(struct audio_client *ac)
 	if (!result) {
 		pr_err("%s: Set topologies failed after timedout payload = 0x%x\n",
 			__func__, cal_block.cal_paddr);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		goto err_unmap;
+#else
 		goto done;
+#endif
 	}
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	return;
+err_unmap:
+	q6asm_memory_unmap_regions(ac, IN);
+err_map:
+	q6asm_mmap_apr_dereg();
+	set_custom_topology = 1;
+mmap_fail:
+	return;
+#else
 done:
 	return;
+#endif
 }
 
 int q6asm_map_rtac_block(struct rtac_cal_block_data *cal_block)
@@ -828,7 +883,11 @@ struct audio_client *q6asm_audio_client_alloc(app_cb cb, void *priv)
 	if (ac->apr == NULL) {
 		pr_err("%s Registration with APR failed\n", __func__);
 		mutex_unlock(&session_lock);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		goto fail_apr1;
+#else
 		goto fail;
+#endif
 	}
 	ac->apr2 = apr_register("ADSP", "ASM", \
 				(apr_fn)q6asm_callback,\
@@ -838,7 +897,11 @@ struct audio_client *q6asm_audio_client_alloc(app_cb cb, void *priv)
 	if (ac->apr2 == NULL) {
 		pr_err("%s Registration with APR-2 failed\n", __func__);
 		mutex_unlock(&session_lock);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		goto fail_apr2;
+#else
 		goto fail;
+#endif
 	}
 	rtac_set_asm_handle(n, ac->apr);
 
@@ -846,7 +909,11 @@ struct audio_client *q6asm_audio_client_alloc(app_cb cb, void *priv)
 	ac->mmap_apr = q6asm_mmap_apr_reg();
 	if (ac->mmap_apr == NULL) {
 		mutex_unlock(&session_lock);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		goto fail_mmap;
+#else
 		goto fail;
+#endif
         }
 
 	init_waitqueue_head(&ac->cmd_wait);
@@ -870,9 +937,18 @@ struct audio_client *q6asm_audio_client_alloc(app_cb cb, void *priv)
 	mutex_unlock(&session_lock);
 
 	return ac;
+#ifdef CONFIG_VENDOR_SMARTISAN
+fail_mmap:
+	apr_deregister(ac->apr2);
+fail_apr2:
+	apr_deregister(ac->apr);
+fail_apr1:
+	q6asm_session_free(ac);
+#else
 fail:
 	q6asm_audio_client_free(ac);
 	return NULL;
+#endif
 fail_session:
 	kfree(ac);
 	return NULL;
@@ -1086,12 +1162,26 @@ static int32_t q6asm_srvc_callback(struct apr_client_data *data, void *priv)
 	payload = data->payload;
 
 	if (data->opcode == RESET_EVENTS) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		struct audio_client *ac_mmap = (struct audio_client *)priv;
+		if (ac_mmap == NULL) {
+			pr_err("%s ac or priv NULL\n", __func__);
+			return -EINVAL;
+		}
+#endif
 		pr_debug("%s: Reset event is received: %d %d apr[%p]\n",
 				__func__,
 				data->reset_event,
 				data->reset_proc,
 				this_mmap.apr);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		atomic_set(&this_mmap.ref_cnt, 0);
+#endif
 		apr_reset(this_mmap.apr);
+#ifdef CONFIG_VENDOR_SMARTISAN
+		this_mmap.apr = NULL;
+		ac_mmap->mmap_apr = NULL;
+#endif
 		for (; i <= OUT; i++) {
 			list_for_each_safe(ptr, next,
 				&common_client.port[i].mem_map_handle) {
@@ -1106,7 +1196,9 @@ static int32_t q6asm_srvc_callback(struct apr_client_data *data, void *priv)
 			}
 			pr_debug("%s:Clearing custom topology\n", __func__);
 		}
+#ifndef CONFIG_VENDOR_SMARTISAN
 		this_mmap.apr = NULL;
+#endif
 		reset_custom_topology_flags();
 		set_custom_topology = 1;
 		topology_map_handle = 0;
@@ -4464,6 +4556,9 @@ fail_cmd:
 
 int q6asm_get_apr_service_id(int session_id)
 {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	int svc_id;
+#endif
 	pr_debug("%s\n", __func__);
 
 	if (session_id <= 0 || session_id > SESSION_MAX) {
@@ -4471,7 +4566,25 @@ int q6asm_get_apr_service_id(int session_id)
 		return -EINVAL;
 	}
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	mutex_lock(&session_lock);
+	if (!session[session_id]) {
+		pr_err("%s: session not active: %d\n", __func__, session_id);
+		mutex_unlock(&session_lock);
+		return -EINVAL;
+	} else if (session[session_id]->apr == NULL) {
+		pr_err("%s: audio client apr is NULL", __func__);
+		mutex_unlock(&session_lock);
+		return -EINVAL;
+	}
+
+	svc_id = ((struct apr_svc *)session[session_id]->apr)->id;
+	mutex_unlock(&session_lock);
+
+	return svc_id;
+#else
 	return ((struct apr_svc *)session[session_id]->apr)->id;
+#endif
 }
 
 

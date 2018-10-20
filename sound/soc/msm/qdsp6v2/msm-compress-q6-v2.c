@@ -472,11 +472,18 @@ static void populate_codec_list(struct msm_compr_audio *prtd)
 			COMPR_PLAYBACK_MIN_NUM_FRAGMENTS;
 	prtd->compr_cap.max_fragments =
 			COMPR_PLAYBACK_MAX_NUM_FRAGMENTS;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	prtd->compr_cap.num_codecs = 5;
+#else
 	prtd->compr_cap.num_codecs = 4;
+#endif
 	prtd->compr_cap.codecs[0] = SND_AUDIOCODEC_MP3;
 	prtd->compr_cap.codecs[1] = SND_AUDIOCODEC_AAC;
 	prtd->compr_cap.codecs[2] = SND_AUDIOCODEC_AC3;
 	prtd->compr_cap.codecs[3] = SND_AUDIOCODEC_EAC3;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	prtd->compr_cap.codecs[4] = SND_AUDIOCODEC_PCM;
+#endif
 }
 
 static int msm_compr_send_media_format_block(struct snd_compr_stream *cstream,
@@ -486,8 +493,26 @@ static int msm_compr_send_media_format_block(struct snd_compr_stream *cstream,
 	struct msm_compr_audio *prtd = runtime->private_data;
 	struct asm_aac_cfg aac_cfg;
 	int ret = 0;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	uint16_t bit_width = 16;
+#endif
 
 	switch (prtd->codec) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	case FORMAT_LINEAR_PCM:
+		pr_debug("SND_AUDIOCODEC_PCM\n");
+		if (prtd->codec_param.codec.format == SNDRV_PCM_FORMAT_S24_LE)
+			bit_width = 24;
+		ret = q6asm_media_format_block_pcm_format_support(
+							prtd->audio_client,
+							prtd->sample_rate,
+							prtd->num_channels,
+							bit_width);
+		if (ret < 0)
+			pr_err("%s: CMD Format block failed\n", __func__);
+
+		break;
+#endif
 	case FORMAT_MP3:
 		/* no media format block needed */
 		break;
@@ -819,11 +844,36 @@ static int msm_compr_set_params(struct snd_compr_stream *cstream,
 	case SNDRV_PCM_RATE_48000:
 		prtd->sample_rate = 48000;
 		break;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	case SNDRV_PCM_RATE_64000:
+		prtd->sample_rate = 64000;
+		break;
+	case SNDRV_PCM_RATE_88200:
+		prtd->sample_rate = 88200;
+		break;
+	case SNDRV_PCM_RATE_96000:
+		prtd->sample_rate = 96000;
+		break;
+	case SNDRV_PCM_RATE_176400:
+		prtd->sample_rate = 176400;
+		break;
+	case SNDRV_PCM_RATE_192000:
+		prtd->sample_rate = 192000;
+		break;
+#endif
 	}
 
 	pr_debug("%s: sample_rate %d\n", __func__, prtd->sample_rate);
 
 	switch (params->codec.id) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	case SND_AUDIOCODEC_PCM: {
+		pr_debug("SND_AUDIOCODEC_PCM\n");
+		prtd->codec = FORMAT_LINEAR_PCM;
+		break;
+	}
+#endif
+
 	case SND_AUDIOCODEC_MP3: {
 		pr_debug("SND_AUDIOCODEC_MP3\n");
 		prtd->codec = FORMAT_MP3;
