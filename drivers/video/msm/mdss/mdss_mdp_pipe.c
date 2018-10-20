@@ -191,6 +191,9 @@ int mdss_mdp_smp_reserve(struct mdss_mdp_pipe *pipe)
 	int i;
 	int rc = 0, rot_mode = 0;
 	u32 nlines, format;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	u32 seg_w;
+#endif
 	u16 width;
 
 	width = pipe->src.w >> pipe->horz_deci;
@@ -204,17 +207,29 @@ int mdss_mdp_smp_reserve(struct mdss_mdp_pipe *pipe)
 		 * Override fetch strides with SMP buffer size for both the
 		 * planes
 		 */
+#ifdef CONFIG_VENDOR_SMARTISAN
+		seg_w = DIV_ROUND_UP(pipe->src.w, 16);
+#endif
 		if (pipe->src_fmt->fetch_planes == MDSS_MDP_PLANE_INTERLEAVED) {
 			/*
 			 * BWC line buffer needs to be divided into 16
 			 * segments and every segment is aligned to format
 			 * specific RAU size
 			 */
+#ifdef CONFIG_VENDOR_SMARTISAN
+			ps.ystride[0] = ALIGN(seg_w, 32) * 16 * ps.rau_h[0] *
+				pipe->src_fmt->bpp;
+#else
 			ps.ystride[0] = ALIGN(pipe->src.w / 16 , 32) * 16 *
 				ps.rau_h[0] * pipe->src_fmt->bpp;
+#endif
 			ps.ystride[1] = 0;
 		} else {
+#ifdef CONFIG_VENDOR_SMARTISAN
+			u32 bwc_width = ALIGN(seg_w, 64) * 16;
+#else
 			u32 bwc_width = ALIGN(pipe->src.w / 16, 64) * 16;
+#endif
 			ps.ystride[0] = bwc_width * ps.rau_h[0];
 			ps.ystride[1] = bwc_width * ps.rau_h[1];
 			/*
