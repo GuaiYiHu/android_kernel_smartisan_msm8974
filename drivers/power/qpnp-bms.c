@@ -27,6 +27,10 @@
 #include <linux/qpnp/qpnp-adc.h>
 #include <linux/qpnp/power-on.h>
 #include <linux/of_batterydata.h>
+#ifdef CONFIG_VENDOR_SMARTISAN
+#include <mach/socinfo.h>
+#include <linux/power/battery_common.h>
+#endif
 
 /* BMS Register Offsets */
 #define REVISION1			0x0
@@ -294,7 +298,11 @@ static struct of_device_id qpnp_bms_match_table[] = {
 };
 
 static char *qpnp_bms_supplicants[] = {
+#ifdef CONFIG_VENDOR_SMARTISAN
+	"main_battery"
+#else
 	"battery"
+#endif
 };
 
 static enum power_supply_property msm_bms_power_props[] = {
@@ -309,6 +317,9 @@ static enum power_supply_property msm_bms_power_props[] = {
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
 };
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int fixed_soc;
+#endif
 static int discard_backup_fcc_data(struct qpnp_bms_chip *chip);
 static void backup_charge_cycle(struct qpnp_bms_chip *chip);
 
@@ -622,10 +633,22 @@ static int get_battery_voltage(struct qpnp_bms_chip *chip, int *result_uv)
 	int rc;
 	struct qpnp_vadc_result adc_result;
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (of_board_is_sfo_v40())
+		rc = qpnp_vadc_read(chip->vadc_dev, P_MUX2_1_3, &adc_result);
+	else
+		rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &adc_result);
+#else
 	rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &adc_result);
+#endif
 	if (rc) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		pr_err("error reading adc channel = %d, rc = %d\n",
+					P_MUX2_1_3, rc);
+#else
 		pr_err("error reading adc channel = %d, rc = %d\n",
 					VBAT_SNS, rc);
+#endif
 		return rc;
 	}
 	pr_debug("mvolts phy = %lld meas = 0x%llx\n", adc_result.physical,
@@ -753,7 +776,11 @@ static int get_battery_status(struct qpnp_bms_chip *chip)
 	union power_supply_propval ret = {0,};
 
 	if (chip->batt_psy == NULL)
+#ifdef CONFIG_VENDOR_SMARTISAN
+		chip->batt_psy = power_supply_get_by_name("main_battery");
+#else
 		chip->batt_psy = power_supply_get_by_name("battery");
+#endif
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the status property */
 		chip->batt_psy->get_property(chip->batt_psy,
@@ -771,7 +798,11 @@ static bool is_battery_charging(struct qpnp_bms_chip *chip)
 	union power_supply_propval ret = {0,};
 
 	if (chip->batt_psy == NULL)
+#ifdef CONFIG_VENDOR_SMARTISAN
+		chip->batt_psy = power_supply_get_by_name("main_battery");
+#else
 		chip->batt_psy = power_supply_get_by_name("battery");
+#endif
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the status property */
 		chip->batt_psy->get_property(chip->batt_psy,
@@ -806,7 +837,11 @@ static bool is_battery_present(struct qpnp_bms_chip *chip)
 			return false;
 	}
 	if (chip->batt_psy == NULL)
+#ifdef CONFIG_VENDOR_SMARTISAN
+		chip->batt_psy = power_supply_get_by_name("main_battery");
+#else
 		chip->batt_psy = power_supply_get_by_name("battery");
+#endif
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the present property */
 		chip->batt_psy->get_property(chip->batt_psy,
@@ -825,7 +860,11 @@ static int get_battery_insertion_ocv_uv(struct qpnp_bms_chip *chip)
 	int rc, vbat;
 
 	if (chip->batt_psy == NULL)
+#ifdef CONFIG_VENDOR_SMARTISAN
+		chip->batt_psy = power_supply_get_by_name("main_battery");
+#else
 		chip->batt_psy = power_supply_get_by_name("battery");
+#endif
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the ocv property */
 		rc = chip->batt_psy->get_property(chip->batt_psy,
@@ -853,7 +892,11 @@ static bool is_batfet_closed(struct qpnp_bms_chip *chip)
 	union power_supply_propval ret = {0,};
 
 	if (chip->batt_psy == NULL)
+#ifdef CONFIG_VENDOR_SMARTISAN
+		chip->batt_psy = power_supply_get_by_name("main_battery");
+#else
 		chip->batt_psy = power_supply_get_by_name("battery");
+#endif
 	if (chip->batt_psy) {
 		/* if battery has been registered, use the online property */
 		chip->batt_psy->get_property(chip->batt_psy,
@@ -882,16 +925,34 @@ static int get_simultaneous_batt_v_and_i(struct qpnp_bms_chip *chip,
 			pr_err("bms current read failed with rc: %d\n", rc);
 			return rc;
 		}
+#ifdef CONFIG_VENDOR_SMARTISAN
+		if (of_board_is_sfo_v40())
+			rc = qpnp_vadc_read(chip->vadc_dev, P_MUX2_1_3, &v_result);
+		else
+			rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &v_result);
+#else
 		rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &v_result);
+#endif
 		if (rc) {
 			pr_err("vadc read failed with rc: %d\n", rc);
 			return rc;
 		}
 		*vbat_uv = (int)v_result.physical;
 	} else {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		if (of_board_is_sfo_v40())
+			rc = qpnp_iadc_vadc_sync_read(chip->iadc_dev,
+						iadc_channel, &i_result,
+						P_MUX2_1_3, &v_result);
+		else
+			rc = qpnp_iadc_vadc_sync_read(chip->iadc_dev,
+						iadc_channel, &i_result,
+						VBAT_SNS, &v_result);
+#else
 		rc = qpnp_iadc_vadc_sync_read(chip->iadc_dev,
 					iadc_channel, &i_result,
 					VBAT_SNS, &v_result);
+#endif
 		if (rc) {
 			pr_err("adc sync read failed with rc: %d\n", rc);
 			return rc;
@@ -907,12 +968,24 @@ static int get_simultaneous_batt_v_and_i(struct qpnp_bms_chip *chip,
 	return 0;
 }
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+static int get_rbatt(struct qpnp_bms_chip *chip,
+					int soc_rbatt_mohm, int batt_temp);
+
+#define DEFAULT_RBATT_SOC 50
+static int estimate_ocv(struct qpnp_bms_chip *chip, int batt_temp)
+#else
 static int estimate_ocv(struct qpnp_bms_chip *chip)
+#endif
 {
 	int ibat_ua, vbat_uv, ocv_est_uv;
 	int rc;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	int rbatt_mohm = get_rbatt(chip, DEFAULT_RBATT_SOC, batt_temp);
+#else
 	int rbatt_mohm = chip->default_rbatt_mohm + chip->r_conn_mohm
 					+ chip->rbatt_capacitive_mohm;
+#endif
 
 	rc = get_simultaneous_batt_v_and_i(chip, &ibat_ua, &vbat_uv);
 	if (rc) {
@@ -921,7 +994,11 @@ static int estimate_ocv(struct qpnp_bms_chip *chip)
 	}
 
 	ocv_est_uv = vbat_uv + (ibat_ua * rbatt_mohm) / 1000;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	pr_debug("estimated pon ocv = %d, vbat_uv = %d ibat_ua = %d rbatt_mohm = %d\n", ocv_est_uv, vbat_uv, ibat_ua, rbatt_mohm);
+#else
 	pr_debug("estimated pon ocv = %d\n", ocv_est_uv);
+#endif
 	return ocv_est_uv;
 }
 
@@ -1049,7 +1126,11 @@ static int read_soc_params_raw(struct qpnp_bms_chip *chip,
 		if (raw->last_good_ocv_uv < MIN_OCV_UV
 				|| warm_reset > 0) {
 			pr_debug("OCV is stale or bad, estimating new OCV.\n");
+#ifdef CONFIG_VENDOR_SMARTISAN
+			chip->last_ocv_uv = estimate_ocv(chip, batt_temp);
+#else
 			chip->last_ocv_uv = estimate_ocv(chip);
+#endif
 			raw->last_good_ocv_uv = chip->last_ocv_uv;
 			reset_cc(chip, CLEAR_CC | CLEAR_SHDW_CC);
 			pr_debug("New PON_OCV_UV = %d, cc = %llx\n",
@@ -2097,7 +2178,9 @@ static int adjust_soc(struct qpnp_bms_chip *chip, struct soc_params *params,
 	 */
 	if (!wake_lock_active(&chip->low_voltage_wake_lock) &&
 			(soc_est == soc
+#ifndef CONFIG_VENDOR_SMARTISAN
 			|| soc_est > chip->adjust_soc_low_threshold
+#endif
 			|| soc >= NO_ADJUST_HIGH_SOC_THRESHOLD))
 		goto out;
 
@@ -2439,6 +2522,19 @@ done_calculating:
 	mutex_lock(&chip->last_soc_mutex);
 	previous_soc = chip->calculated_soc;
 	chip->calculated_soc = new_calculated_soc;
+
+#ifdef CONFIG_VENDOR_SMARTISAN
+	/* fixed calculated_soc when switch to backup battery */
+	if (main_to_bak || !current_used_batt) {
+		chip->calculated_soc = fixed_soc;
+		pr_debug("main_to_bak or back trickle occur, fixed_soc: %d\n", fixed_soc);
+	} else {
+		chip->calculated_soc = new_calculated_soc;
+		fixed_soc = chip->calculated_soc;
+		pr_debug("main battery power supply, update calculated_soc %d\n", chip->calculated_soc);
+	}
+#endif
+
 	pr_debug("CC based calculated SOC = %d\n", chip->calculated_soc);
 	if (chip->last_soc_invalid) {
 		chip->last_soc_invalid = false;
@@ -2733,7 +2829,14 @@ static void btm_notify_vbat(enum qpnp_tm_state state, void *ctx)
 	struct qpnp_vadc_result result;
 	int rc;
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (of_board_is_sfo_v40())
+		rc = qpnp_vadc_read(chip->vadc_dev, P_MUX2_1_3, &result);
+	else
+		rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &result);
+#else
 	rc = qpnp_vadc_read(chip->vadc_dev, VBAT_SNS, &result);
+#endif
 	pr_debug("vbat = %lld, raw = 0x%x\n", result.physical, result.adc_code);
 
 	get_battery_voltage(chip, &vbat_uv);
@@ -2797,7 +2900,14 @@ static int setup_vbat_monitoring(struct qpnp_bms_chip *chip)
 	chip->vbat_monitor_params.high_thr = chip->max_voltage_uv
 							- VBATT_ERROR_MARGIN;
 	chip->vbat_monitor_params.state_request = ADC_TM_HIGH_LOW_THR_ENABLE;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	if (of_board_is_sfo_v40())
+		chip->vbat_monitor_params.channel = P_MUX2_1_3;
+	else
+		chip->vbat_monitor_params.channel = VBAT_SNS;
+#else
 	chip->vbat_monitor_params.channel = VBAT_SNS;
+#endif
 	chip->vbat_monitor_params.btm_ctx = (void *)chip;
 	chip->vbat_monitor_params.timer_interval = ADC_MEAS1_INTERVAL_1S;
 	chip->vbat_monitor_params.threshold_notification = &btm_notify_vbat;
@@ -3340,6 +3450,16 @@ static void battery_insertion_check(struct qpnp_bms_chip *chip)
 		/* a new battery was inserted or removed, so force a soc
 		 * recalculation to update the SoC */
 		schedule_work(&chip->recalc_work);
+#ifdef CONFIG_VENDOR_SMARTISAN
+	} else if (bak_to_main) {
+		chip->new_battery = true;
+		bak_to_main = 0;
+		chip->insertion_ocv_uv = g_main_voltage;
+		/* a new battery was inserted or removed, so force a soc
+		 * recalculation to update the SoC */
+		schedule_work(&chip->recalc_work);
+		pr_debug("bak_to_main occur, recalculate_soc, insertion_ocv_uv: %d\n", chip->insertion_ocv_uv);
+#endif
 	}
 	mutex_unlock(&chip->vbat_monitor_mutex);
 }
@@ -3611,6 +3731,10 @@ static int set_battery_data(struct qpnp_bms_chip *chip)
 		batt_data = &QRD_4v35_2000mAh_data;
 	} else if (chip->batt_type == BATT_QRD_4V2_1300MAH) {
 		batt_data = &qrd_4v2_1300mah_data;
+#ifdef CONFIG_VENDOR_SMARTISAN
+	} else if (chip->batt_type == BATT_SFO_4V35_2570MAH) {
+		batt_data = &sfo_4v35_2570mah_data;
+#endif
 	} else {
 		battery_id = read_battery_id(chip);
 		if (battery_id < 0) {
@@ -3622,8 +3746,13 @@ static int set_battery_data(struct qpnp_bms_chip *chip)
 		node = of_find_node_by_name(chip->spmi->dev.of_node,
 				"qcom,battery-data");
 		if (!node) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+			pr_warn("No available batterydata, using sfo 2570\n");
+			batt_data = &sfo_4v35_2570mah_data;
+#else
 			pr_warn("No available batterydata, using palladium 1500\n");
 			batt_data = &palladium_1500_data;
+#endif
 			goto assign_data;
 		}
 		batt_data = devm_kzalloc(chip->dev,
@@ -4104,9 +4233,16 @@ static int refresh_die_temp_monitor(struct qpnp_bms_chip *chip)
 
 	rc = qpnp_vadc_read(chip->vadc_dev, DIE_TEMP, &result);
 
+#ifdef CONFIG_VENDOR_SMARTISAN
+	pr_debug("low = %lld, high = %lld, margin = %d\n",
+			result.physical - chip->temperature_margin,
+			result.physical + chip->temperature_margin,
+			chip->temperature_margin);
+#else
 	pr_debug("low = %lld, high = %lld\n",
 			result.physical - chip->temperature_margin,
 			result.physical + chip->temperature_margin);
+#endif
 	chip->die_temp_monitor_params.high_temp = result.physical
 						+ chip->temperature_margin;
 	chip->die_temp_monitor_params.low_temp = result.physical
@@ -4331,8 +4467,13 @@ static int __devinit qpnp_bms_probe(struct spmi_device *spmi)
 	vbatt = 0;
 	rc = get_battery_voltage(chip, &vbatt);
 	if (rc) {
+#ifdef CONFIG_VENDOR_SMARTISAN
+		pr_err("error reading P_MUX2_1_3 adc channel = %d, rc = %d\n",
+						P_MUX2_1_3, rc);
+#else
 		pr_err("error reading vbat_sns adc channel = %d, rc = %d\n",
 						VBAT_SNS, rc);
+#endif
 		goto unregister_dc;
 	}
 
