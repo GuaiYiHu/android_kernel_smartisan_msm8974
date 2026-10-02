@@ -558,6 +558,9 @@ struct posix_acl;
  * the RCU path lookup and 'stat' data) fields at the beginning
  * of the 'struct inode'
  */
+struct fsverity_info;
+struct fsverity_operations;
+
 struct inode {
 	umode_t			i_mode;
 	unsigned short		i_opflags;
@@ -652,6 +655,9 @@ struct inode {
 #endif
 
 	void			*i_private; /* fs or device private pointer */
+#ifdef CONFIG_FS_VERITY
+	struct fsverity_info	*i_verity_info;
+#endif
 };
 
 static inline int inode_unhashed(struct inode *inode)
@@ -1282,6 +1288,9 @@ struct super_block {
 	loff_t			s_maxbytes;	/* Max file size */
 	struct file_system_type	*s_type;
 	const struct super_operations	*s_op;
+#ifdef CONFIG_FS_VERITY
+	const struct fsverity_operations *s_vop;
+#endif
 	const struct dquot_operations	*dq_op;
 	const struct quotactl_ops	*s_qcop;
 	const struct export_operations *s_export_op;
@@ -1705,6 +1714,7 @@ struct super_operations {
 #define S_PRIVATE	512	/* Inode is fs-internal */
 #define S_IMA		1024	/* Inode has an associated IMA struct */
 #define S_AUTOMOUNT	2048	/* Automount/referral quasi-directory */
+#define S_VERITY	(1 << 16) /* fs-verity protected file */
 #define S_NOSEC		4096	/* no suid or xattr security attributes */
 
 /*
@@ -1742,6 +1752,7 @@ struct super_operations {
 #define IS_PRIVATE(inode)	((inode)->i_flags & S_PRIVATE)
 #define IS_IMA(inode)		((inode)->i_flags & S_IMA)
 #define IS_AUTOMOUNT(inode)	((inode)->i_flags & S_AUTOMOUNT)
+#define IS_VERITY(inode)		((inode)->i_flags & S_VERITY)
 #define IS_NOSEC(inode)		((inode)->i_flags & S_NOSEC)
 
 /*

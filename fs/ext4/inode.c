@@ -191,6 +191,7 @@ void ext4_evict_inode(struct inode *inode)
 	int err;
 
 	trace_ext4_evict_inode(inode);
+	fsverity_cleanup_inode(inode);
 
 	if (inode->i_nlink) {
 		/*
@@ -3022,6 +3023,10 @@ static int ext4_readpage(struct file *file, struct page *page)
 	struct inode *inode = page->mapping->host;
 
 	trace_ext4_readpage(page);
+#ifdef CONFIG_FS_VERITY
+	if (IS_VERITY(inode) || ext4_verity_in_progress(inode))
+		return ext4_verity_readpage(NULL, page);
+#endif
 
 	if (ext4_has_inline_data(inode))
 		ret = ext4_readpage_inline(inode, page);
@@ -3042,6 +3047,10 @@ ext4_readpages(struct file *file, struct address_space *mapping,
 	if (ext4_has_inline_data(inode))
 		return 0;
 
+#ifdef CONFIG_FS_VERITY
+	if (IS_VERITY(mapping->host) || ext4_verity_in_progress(mapping->host))
+		return read_cache_pages(mapping, pages, ext4_verity_readpage, NULL);
+#endif
 	return mpage_readpages(mapping, pages, nr_pages, ext4_get_block);
 }
 
@@ -3308,7 +3317,7 @@ static ssize_t ext4_direct_IO(int rw, struct kiocb *iocb,
 	/*
 	 * If we are doing data journalling we don't support O_DIRECT
 	 */
-	if (ext4_should_journal_data(inode))
+	if (ext4_should_journal_data(inode) || IS_VERITY(inode))
 		return 0;
 
 	/* Let buffer I/O handle the inline data case. */
@@ -4128,8 +4137,10 @@ void ext4_set_inode_flags(struct inode *inode)
 		new_fl |= S_NOATIME;
 	if (flags & EXT4_DIRSYNC_FL)
 		new_fl |= S_DIRSYNC;
+	if (flags & EXT4_VERITY_FL)
+		new_fl |= S_VERITY;
 	set_mask_bits(&inode->i_flags,
-		      S_SYNC|S_APPEND|S_IMMUTABLE|S_NOATIME|S_DIRSYNC, new_fl);
+		      S_SYNC|S_APPEND|S_IMMUTABLE|S_NOATIME|S_DIRSYNC|S_VERITY, new_fl);
 }
 
 /* Propagate flags from i_flags to EXT4_I(inode)->i_flags */
@@ -4747,6 +4758,9 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
 	int orphan = 0;
 	const unsigned int ia_valid = attr->ia_valid;
 
+	error = fsverity_prepare_setattr(dentry, attr);
+	if (error)
+		return error;
 	error = inode_change_ok(inode, attr);
 	if (error)
 		return error;
