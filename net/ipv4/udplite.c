@@ -37,6 +37,9 @@ static const struct net_protocol udplite_protocol = {
 };
 
 struct proto 	udplite_prot = {
+#ifdef CONFIG_INET_DIAG_DESTROY
+	.diag_destroy = udp_abort,
+#endif
 	.name		   = "UDP-Lite",
 	.owner		   = THIS_MODULE,
 	.close		   = udp_lib_close,

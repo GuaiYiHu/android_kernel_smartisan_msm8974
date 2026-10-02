@@ -74,6 +74,7 @@ struct inet6_ifaddr {
 	int			regen_count;
 #endif
 	bool			tokenized;
+	u8			stable_privacy_retry;
 
 	struct rcu_head		rcu;
 };

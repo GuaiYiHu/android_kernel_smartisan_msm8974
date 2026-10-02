@@ -1510,6 +1510,9 @@ void udp_v6_clear_sk(struct sock *sk, int size)
 /* ------------------------------------------------------------------------ */
 
 struct proto udpv6_prot = {
+#ifdef CONFIG_INET_DIAG_DESTROY
+	.diag_destroy = udp_abort,
+#endif
 	.name		   = "UDPv6",
 	.owner		   = THIS_MODULE,
 	.close		   = udp_lib_close,

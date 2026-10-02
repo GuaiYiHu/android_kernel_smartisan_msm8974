@@ -53,7 +53,11 @@ static int tcp_diag_destroy(struct sk_buff *in_skb,
 			    struct inet_diag_req_v2 *req)
 {
 	struct net *net = sock_net(in_skb->sk);
-	struct sock *sk = inet_diag_find_one_icsk(net, &tcp_hashinfo, req);
+	struct sock *sk;
+
+	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		return -EPERM;
+	sk = inet_diag_find_one_icsk(net, &tcp_hashinfo, req);
 
 	if (IS_ERR(sk))
 		return PTR_ERR(sk);

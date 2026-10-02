@@ -835,9 +835,9 @@ out:
 static __inline__ int neigh_max_probes(struct neighbour *n)
 {
 	struct neigh_parms *p = n->parms;
-	return (n->nud_state & NUD_PROBE) ?
-		p->ucast_probes :
-		p->ucast_probes + p->app_probes + p->mcast_probes;
+	return p->ucast_probes + p->app_probes +
+		((n->nud_state & NUD_PROBE) ? p->mcast_reprobes :
+		 p->mcast_probes);
 }
 
 static void neigh_invalidate(struct neighbour *neigh)
@@ -1809,6 +1809,7 @@ static int neightbl_fill_parms(struct sk_buff *skb, struct neigh_parms *parms)
 	    nla_put_u32(skb, NDTPA_APP_PROBES, parms->app_probes) ||
 	    nla_put_u32(skb, NDTPA_UCAST_PROBES, parms->ucast_probes) ||
 	    nla_put_u32(skb, NDTPA_MCAST_PROBES, parms->mcast_probes) ||
+	    nla_put_u32(skb, NDTPA_MCAST_REPROBES, parms->mcast_reprobes) ||
 	    nla_put_msecs(skb, NDTPA_REACHABLE_TIME, parms->reachable_time) ||
 	    nla_put_msecs(skb, NDTPA_BASE_REACHABLE_TIME,
 			  parms->base_reachable_time) ||
@@ -1961,6 +1962,7 @@ static const struct nla_policy nl_ntbl_parm_policy[NDTPA_MAX+1] = {
 	[NDTPA_APP_PROBES]		= { .type = NLA_U32 },
 	[NDTPA_UCAST_PROBES]		= { .type = NLA_U32 },
 	[NDTPA_MCAST_PROBES]		= { .type = NLA_U32 },
+	[NDTPA_MCAST_REPROBES]		= { .type = NLA_U32 },
 	[NDTPA_BASE_REACHABLE_TIME]	= { .type = NLA_U64 },
 	[NDTPA_GC_STALETIME]		= { .type = NLA_U64 },
 	[NDTPA_DELAY_PROBE_TIME]	= { .type = NLA_U64 },
@@ -2048,6 +2050,13 @@ static int neightbl_set(struct sk_buff *skb, struct nlmsghdr *nlh)
 				break;
 			case NDTPA_UCAST_PROBES:
 				p->ucast_probes = nla_get_u32(tbp[i]);
+				break;
+			case NDTPA_MCAST_REPROBES:
+				if (nla_get_u32(tbp[i]) > INT_MAX) {
+					err = -EINVAL;
+					goto errout_tbl_lock;
+				}
+				p->mcast_reprobes = nla_get_u32(tbp[i]);
 				break;
 			case NDTPA_MCAST_PROBES:
 				p->mcast_probes = nla_get_u32(tbp[i]);
@@ -2787,6 +2796,7 @@ EXPORT_SYMBOL(neigh_app_ns);
 
 #ifdef CONFIG_SYSCTL
 static int zero;
+static int reprobes_max = INT_MAX;
 static int unres_qlen_max = INT_MAX / SKB_TRUESIZE(ETH_FRAME_LEN);
 
 static int proc_unres_qlen(ctl_table *ctl, int write, void __user *buffer,
@@ -2809,6 +2819,7 @@ static int proc_unres_qlen(ctl_table *ctl, int write, void __user *buffer,
 
 enum {
 	NEIGH_VAR_MCAST_PROBE,
+	NEIGH_VAR_MCAST_REPROBE,
 	NEIGH_VAR_UCAST_PROBE,
 	NEIGH_VAR_APP_PROBE,
 	NEIGH_VAR_RETRANS_TIME,
@@ -2841,6 +2852,14 @@ static struct neigh_sysctl_table {
 			.maxlen		= sizeof(int),
 			.mode		= 0644,
 			.proc_handler	= proc_dointvec,
+		},
+		[NEIGH_VAR_MCAST_REPROBE] = {
+			.procname = "mcast_resolicit",
+			.maxlen = sizeof(int),
+			.mode = 0644,
+			.proc_handler = proc_dointvec_minmax,
+			.extra1 = &zero,
+			.extra2 = &reprobes_max,
 		},
 		[NEIGH_VAR_UCAST_PROBE] = {
 			.procname	= "ucast_solicit",
@@ -2973,6 +2992,7 @@ int neigh_sysctl_register(struct net_device *dev, struct neigh_parms *p,
 		goto err;
 
 	t->neigh_vars[NEIGH_VAR_MCAST_PROBE].data  = &p->mcast_probes;
+	t->neigh_vars[NEIGH_VAR_MCAST_REPROBE].data = &p->mcast_reprobes;
 	t->neigh_vars[NEIGH_VAR_UCAST_PROBE].data  = &p->ucast_probes;
 	t->neigh_vars[NEIGH_VAR_APP_PROBE].data  = &p->app_probes;
 	t->neigh_vars[NEIGH_VAR_RETRANS_TIME].data  = &p->retrans_time;

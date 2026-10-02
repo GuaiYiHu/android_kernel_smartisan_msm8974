@@ -14,6 +14,7 @@
 #include <linux/inet_diag.h>
 #include <linux/udp.h>
 #include <net/udp.h>
+#include <net/ipv6.h>
 #include <net/udplite.h>
 #include <linux/sock_diag.h>
 
@@ -162,11 +163,64 @@ static void udp_diag_get_info(struct sock *sk, struct inet_diag_msg *r,
 	r->idiag_wqueue = sk_wmem_alloc_get(sk);
 }
 
+#ifdef CONFIG_INET_DIAG_DESTROY
+static int udp_diag_destroy_table(struct sk_buff *skb,
+		struct inet_diag_req_v2 *req, struct udp_table *table)
+{
+	struct net *net = sock_net(skb->sk);
+	struct sock *sk;
+	int err;
+
+	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		return -EPERM;
+	/* In 3.10 the lookup routines already take a socket reference. */
+	if (req->sdiag_family == AF_INET)
+		sk = __udp4_lib_lookup(net, req->id.idiag_dst[0],
+			req->id.idiag_dport, req->id.idiag_src[0],
+			req->id.idiag_sport, req->id.idiag_if, table, NULL);
+#if IS_ENABLED(CONFIG_IPV6)
+	else if (req->sdiag_family == AF_INET6) {
+		if (ipv6_addr_v4mapped((struct in6_addr *)req->id.idiag_dst) &&
+		    ipv6_addr_v4mapped((struct in6_addr *)req->id.idiag_src))
+			sk = __udp4_lib_lookup(net, req->id.idiag_dst[3],
+				req->id.idiag_dport, req->id.idiag_src[3],
+				req->id.idiag_sport, req->id.idiag_if, table, NULL);
+		else
+			sk = __udp6_lib_lookup(net,
+				(struct in6_addr *)req->id.idiag_dst,
+				req->id.idiag_dport,
+				(struct in6_addr *)req->id.idiag_src,
+				req->id.idiag_sport, req->id.idiag_if, table, NULL);
+	}
+#endif
+	else
+		return -EINVAL;
+	if (!sk)
+		return -ENOENT;
+	err = sock_diag_check_cookie(sk, req->id.idiag_cookie);
+	if (!err)
+		err = sock_diag_destroy(sk, ECONNABORTED);
+	sock_put(sk);
+	return err;
+}
+static int udp_diag_destroy(struct sk_buff *skb, struct inet_diag_req_v2 *req)
+{
+	return udp_diag_destroy_table(skb, req, &udp_table);
+}
+static int udplite_diag_destroy(struct sk_buff *skb, struct inet_diag_req_v2 *req)
+{
+	return udp_diag_destroy_table(skb, req, &udplite_table);
+}
+#endif
+
 static const struct inet_diag_handler udp_diag_handler = {
 	.dump		 = udp_diag_dump,
 	.dump_one	 = udp_diag_dump_one,
 	.idiag_get_info  = udp_diag_get_info,
 	.idiag_type	 = IPPROTO_UDP,
+#ifdef CONFIG_INET_DIAG_DESTROY
+	.destroy = udp_diag_destroy,
+#endif
 };
 
 static void udplite_diag_dump(struct sk_buff *skb, struct netlink_callback *cb,
@@ -186,6 +240,9 @@ static const struct inet_diag_handler udplite_diag_handler = {
 	.dump_one	 = udplite_diag_dump_one,
 	.idiag_get_info  = udp_diag_get_info,
 	.idiag_type	 = IPPROTO_UDPLITE,
+#ifdef CONFIG_INET_DIAG_DESTROY
+	.destroy = udplite_diag_destroy,
+#endif
 };
 
 static int __init udp_diag_init(void)

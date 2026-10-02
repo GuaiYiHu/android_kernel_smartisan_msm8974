@@ -29,6 +29,8 @@ struct netns_sysctl_ipv6 {
 	int ip6_rt_min_advmss;
 	int icmpv6_time;
 	int fwmark_reflect;
+	int idgen_retries;
+	int idgen_delay;
 };
 
 struct netns_ipv6 {

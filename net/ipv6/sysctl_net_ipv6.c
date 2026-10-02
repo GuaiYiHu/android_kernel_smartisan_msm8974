@@ -16,6 +16,9 @@
 #include <net/addrconf.h>
 #include <net/inet_frag.h>
 
+static int zero;
+static int idgen_retries_max = 255;
+
 static ctl_table ipv6_table_template[] = {
 	{
 		.procname	= "bindv6only",
@@ -30,6 +33,20 @@ static ctl_table ipv6_table_template[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec
+	},
+	{
+		.procname = "idgen_retries",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.proc_handler = proc_dointvec_minmax,
+		.extra1 = &zero,
+		.extra2 = &idgen_retries_max,
+	},
+	{
+		.procname = "idgen_delay",
+		.maxlen = sizeof(int),
+		.mode = 0644,
+		.proc_handler = proc_dointvec_jiffies,
 	},
 	{ }
 };
@@ -58,6 +75,9 @@ static int __net_init ipv6_sysctl_net_init(struct net *net)
 	if (!ipv6_table)
 		goto out;
 	ipv6_table[0].data = &net->ipv6.sysctl.bindv6only;
+	ipv6_table[1].data = &net->ipv6.sysctl.fwmark_reflect;
+	ipv6_table[2].data = &net->ipv6.sysctl.idgen_retries;
+	ipv6_table[3].data = &net->ipv6.sysctl.idgen_delay;
 
 	ipv6_route_table = ipv6_route_sysctl_init(net);
 	if (!ipv6_route_table)

@@ -33,6 +33,9 @@ static const struct inet6_protocol udplitev6_protocol = {
 };
 
 struct proto udplitev6_prot = {
+#ifdef CONFIG_INET_DIAG_DESTROY
+	.diag_destroy = udp_abort,
+#endif
 	.name		   = "UDPLITEv6",
 	.owner		   = THIS_MODULE,
 	.close		   = udp_lib_close,
